@@ -278,7 +278,10 @@
     <div class="prose">
       <p>Every box now has a rate of change you can compute. Stack them all into one long vector — 6 fields × N boxes — and the PDE has become a plain system of ODEs:</p>
     </div>
-    <div class="eqwrap">$$\frac{d\mathbf u}{d\tau}=\mathbf F(\mathbf u),\qquad \mathbf u\in\mathbb R^{M},\quad M=6N$$</div>
+    <div class="eqwrap">$$\frac{d\textcolor{#185FA5}{\mathbf u}}{d\tau}=\underbrace{\mathbf F(\textcolor{#185FA5}{\mathbf u})}_{\textcolor{#B4530A}{\text{every flux + source term from step 1, for every field and box, packed into one function}}},\qquad \textcolor{#185FA5}{\mathbf u}\in\mathbb R^{M},\quad M=6N$$</div>
+    <div class="legend" style="margin:0 0 10px;">
+      <span><b style="color:var(--accent);">u</b> — the same state you met in step 1, now stacked into one vector of length M</span>
+    </div>
     <div class="prose">
       <p>This is the <b>method of lines</b>, and it is the moment the problem stops being a PDE and becomes something a standard solver could handle. The obvious next move is to march: <code>u_new = u_old + Δτ·F(u_old)</code>. It fails, and not by a small margin.</p>
       <p>The reason is that this system contains processes running at wildly different speeds — all at once, in the same vector:</p>
@@ -294,7 +297,19 @@
     <h2 class="st">The mechanism, on one equation</h2>
     <p class="stsub">Step 3 · continued</p>
     <div class="prose">
-      <p>Strip it to the simplest possible stiff problem, <code>dy/dτ = −λy</code>, whose true solution just decays smoothly to zero. Push the slider and watch what each method does as the step gets large relative to the decay rate.</p>
+      <p>Strip it to the simplest possible stiff problem, whose true solution just decays smoothly to zero:</p>
+    </div>
+    <div class="eqwrap">$$\frac{dy}{d\tau}=-\lambda y$$</div>
+    <div class="prose">
+      <p>Applying explicit and implicit Euler to this one line produces two update rules with the same shape — a <b>multiplier</b> times last step's value. Everything about the difference between them is in that multiplier:</p>
+    </div>
+    <div class="eqwrap">$$y^{n+1}=\underbrace{(1-\lambda\Delta\tau)}_{\textcolor{#C0392B}{\text{amplification factor — explicit}}}y^{n}\qquad\qquad y^{n+1}=\underbrace{\frac{1}{1+\lambda\Delta\tau}}_{\textcolor{#185FA5}{\text{amplification factor — implicit}}}y^{n}$$</div>
+    <div class="key" style="margin:14px 0;">
+      <span class="lbl">The rule hiding in the algebra</span>
+      A method stays bounded exactly when its amplification factor has magnitude <b>≤ 1</b>. The explicit factor <code>1−λΔτ</code> drops below −1 the moment <code>λΔτ</code> passes 2 — that's the wall the slider is about to hit. The implicit factor <code>1/(1+λΔτ)</code> sits between 0 and 1 for <em>any</em> <code>λΔτ &gt; 0</code>, no matter how large — there is no wall to hit.
+    </div>
+    <div class="prose">
+      <p>Push the slider and watch what each method does as the step gets large relative to the decay rate.</p>
     </div>
     <div class="bar">
       <label class="ctl">λ·Δτ
@@ -318,14 +333,17 @@
     <h2 class="st">Implicit means you have to solve, not evaluate</h2>
     <p class="stsub">Step 4 · Newton</p>
     <div class="prose">
-      <p>The fix for stiffness is to evaluate the rate at the <b>new</b> time rather than the old one:</p>
+      <p>The fix for stiffness is to evaluate the rate at the <b>new</b> time rather than the old one. Colour marks the unknown wherever it appears — same rule as every equation so far:</p>
     </div>
-    <div class="eqwrap">$$\mathbf u^{n+1}=\mathbf u^{n}+\Delta\tau\,\mathbf F(\mathbf u^{n+1})$$</div>
+    <div class="eqwrap">$$\textcolor{#185FA5}{\mathbf u^{n+1}}=\mathbf u^{n}+\Delta\tau\,\underbrace{\mathbf F(\textcolor{#185FA5}{\mathbf u^{n+1}})}_{\textcolor{#B4530A}{\text{the unknown, buried inside a nonlinear function}}}$$</div>
     <div class="prose">
-      <p>Look carefully at where the unknown sits. It's on <em>both</em> sides, and it's buried inside <b>F</b> — inside a Langmuir isotherm, inside an Arrhenius exponential, inside WENO's fourth powers. There is no rearranging this. You cannot compute <code>u^{n+1}</code>; you can only <b>hunt for it</b>.</p>
+      <p>Look carefully at where the coloured symbol sits. It's on <em>both</em> sides, and on the right it's buried inside <b>F</b> — inside a Langmuir isotherm, inside an Arrhenius exponential, inside WENO's fourth powers. There is no rearranging this. You cannot compute <code>u^{n+1}</code>; you can only <b>hunt for it</b>.</p>
       <p>So turn it into a root-finding problem. Define a residual that is zero exactly when you've got the right answer:</p>
     </div>
-    <div class="eqwrap">$$\mathbf r(\mathbf u)=\mathbf u-\mathbf u^{n}-\Delta\tau\,\mathbf F(\mathbf u)\;\overset{!}{=}\;\mathbf 0$$</div>
+    <div class="eqwrap">$$\mathbf r(\textcolor{#185FA5}{\mathbf u})=\textcolor{#185FA5}{\mathbf u}-\mathbf u^{n}-\Delta\tau\,\mathbf F(\textcolor{#185FA5}{\mathbf u})\;\underbrace{\overset{!}{=}\;\mathbf 0}_{\textcolor{#5B4BC4}{\text{true exactly when }\mathbf u\text{ solves the step}}}$$</div>
+    <div class="legend" style="margin:0 0 4px;">
+      <span><b style="color:var(--accent);">coloured symbol</b> — the guess you're refining, wherever it appears</span>
+    </div>
     <div class="prose">
       <p>and hand it to Newton's method. Each iteration solves a <em>linear</em> system for a correction, applies it, and re-measures how wrong you still are. Step through it below — the bars are the residual norm on a log scale, so each one dropping is roughly a power of ten of error removed.</p>
     </div>
@@ -359,7 +377,10 @@
     <div class="prose">
       <p>The linear system Newton solves each iteration is <b>J·Δu = −r</b>, where J holds one entry for every question of the form: <em>if I nudge unknown k, how much does residual i move?</em></p>
     </div>
-    <div class="eqwrap">$$\mathbf J=\mathbf I-\Delta\tau\,\frac{\partial \mathbf F}{\partial \mathbf u},\qquad J_{ik}=\frac{\partial r_i}{\partial u_k}$$</div>
+    <div class="eqwrap">$$\mathbf J=\mathbf I-\Delta\tau\underbrace{\frac{\partial \mathbf F}{\partial \textcolor{#185FA5}{\mathbf u}}}_{\textcolor{#B4530A}{\text{how much every residual reacts to a nudge in every unknown}}},\qquad J_{ik}=\frac{\partial r_i}{\partial \textcolor{#185FA5}{u_k}}$$</div>
+    <div class="legend" style="margin:0 0 4px;">
+      <span><b style="color:var(--accent);">u<sub>k</sub></b> — the one unknown being nudged; <b style="color:var(--warm);">the bracket</b> — every residual's response to that nudge, all at once</span>
+    </div>
     <div class="prose">
       <p>With M unknowns that's M² entries. For a real run that number gets absurd fast. But almost every one of them is <b>exactly zero</b>, and step 2 already told you why.</p>
       <p><b>Hover over any column below.</b> The strip underneath shows the column of boxes; the highlighted ones are the only boxes whose balance changes when you nudge that unknown.</p>
