@@ -243,6 +243,36 @@
   </div>
 
   <div class="card">
+    <h2 class="st">The two edges, where WENO runs out of neighbours</h2>
+    <p class="stsub">Step 2 · continued</p>
+    <div class="prose">
+      <p>Everything so far assumed box <i>j</i> has neighbours on both sides. The very first and very last boxes in the column don't. That isn't a numerical inconvenience to patch over — at the inlet, it's the whole reason the simulation moves at all: nothing changes anywhere until you say what's flowing in.</p>
+    </div>
+    <canvas id="c-boundary" data-h="185"></canvas>
+    <div class="prose">
+      <p>At the inlet, <b>no stencil is involved</b>. The face value is stated directly, blending the known feed with the first box's own composition by how strongly convection dominates diffusion right at the boundary:</p>
+    </div>
+    <div class="eqwrap">$$\textcolor{#185FA5}{y_{0.5}}=\frac{\textcolor{#185FA5}{y_1}+y_{\text{feed}}\cdot\kappa}{1+\kappa},\qquad \kappa=\underbrace{\overline v\,Pe\,\frac{\Delta Z}{2}}_{\textcolor{#B4530A}{\text{convection strength at the inlet}}}$$</div>
+    <div class="prose">
+      <p>Fast flow, weak dispersion — <code>κ</code> is large and the face collapses to the feed value itself, exactly as a real inlet should behave. Slow flow, strong dispersion — <code>κ</code> is small and the face leans toward whatever the first box already contains. Either way, the value comes from physics stated at the boundary, not from neighbouring boxes. The outlet is simpler still: the column is open, so composition and temperature just take the last box's own value, and only the pressure is pinned to the reference:</p>
+    </div>
+    <div class="eqwrap">$$y_{N+0.5}=\textcolor{#185FA5}{y_N},\qquad \overline T_{N+0.5}=\textcolor{#185FA5}{\overline T_N},\qquad \overline P_{N+0.5}=1$$</div>
+    <div class="prose">
+      <p>But go one box further in from the inlet, to box 2. Its <em>upwind-biased</em> stencil reaches back to "box 0" for a value — and box 0 doesn't exist, not even as a boundary condition; the boundary condition only told you the <em>face</em> value at 0.5, not a box centred at 0. The paper's fix (eq 32) invents that missing box by assuming the known face sits exactly halfway between it and box 1, then solving for what it must be:</p>
+    </div>
+    <div class="eqwrap">$$\underbrace{\textcolor{#185FA5}{f_0}}_{\textcolor{#B4530A}{\text{fictitious — invented so WENO has a neighbour}}}=2\underbrace{f_{0.5}}_{\textcolor{#5B4BC4}{\text{already known, from the inlet condition above}}}-\;\textcolor{#185FA5}{f_1}$$</div>
+    <div class="legend" style="margin:0 0 4px;">
+      <span><b style="color:var(--accent);">coloured symbol</b> — a real box value, wherever it appears (fictitious or not)</span>
+      <span><i style="border-top-color:var(--warm);"></i>the boundary physics — no neighbours needed</span>
+      <span><i style="border-top-color:var(--violet);"></i>something you already computed one line up</span>
+    </div>
+    <div class="key">
+      <span class="lbl">Why this matters</span>
+      Two genuinely different mechanisms are doing the work here, and it's easy to blur them. The inlet and outlet formulas are <b>physics</b> — real statements about what enters and leaves the column. The ghost value <code>f<sub>0</sub></code> is pure <b>bookkeeping</b> — nothing physical sits there; it exists only so the same WENO formula from the last card can run unmodified one box in from the edge, instead of needing a special case for every stencil that gets close to a boundary.
+    </div>
+  </div>
+
+  <div class="card">
     <h2 class="st">Does it actually matter? Watch all three run</h2>
     <p class="stsub">Step 2 · the payoff</p>
     <div class="prose">
@@ -282,6 +312,17 @@
     <div class="legend" style="margin:0 0 10px;">
       <span><b style="color:var(--accent);">u</b> — the same state you met in step 1, now stacked into one vector of length M</span>
     </div>
+    <div class="prose">
+      <p>An ODE needs one more ingredient before it means anything: a place to start. <code>u̇=F(u)</code> alone has infinitely many solutions — one for every possible starting point — so the model has to state <b>u<sub>0</sub></b> explicitly, before τ = 0:</p>
+    </div>
+    <table>
+      <tr><th>Field</th><th>Value at τ = 0</th><th>Why</th></tr>
+      <tr><td>y (gas CO₂)</td><td class="num">0</td><td>the column starts saturated with pure N₂ — no CO₂ anywhere yet</td></tr>
+      <tr><td>x<sub>CO₂</sub> (solid)</td><td class="num">0</td><td>nothing has adsorbed yet</td></tr>
+      <tr><td>x<sub>N₂</sub> (solid)</td><td class="num">x*(y=0, P=1, T=1)</td><td>the solid is already at equilibrium with the N₂ filling the column</td></tr>
+      <tr><td>T, T<sub>w</sub></td><td class="num">1</td><td>column and wall start at ambient temperature</td></tr>
+      <tr><td>P</td><td class="num">1 + (1−Z)/K<sub>Darcy</sub></td><td><b>not flat.</b> A uniform P = 1 combined with a fixed inlet velocity would violate Darcy's law at τ = 0 — exactly the kind of inconsistency that shows up later as a spurious wiggle in the first few steps. This profile is chosen so Darcy's law already balances before anything is asked to move.</td></tr>
+    </table>
     <div class="prose">
       <p>This is the <b>method of lines</b>, and it is the moment the problem stops being a PDE and becomes something a standard solver could handle. The obvious next move is to march: <code>u_new = u_old + Δτ·F(u_old)</code>. It fails, and not by a small margin.</p>
       <p>The reason is that this system contains processes running at wildly different speeds — all at once, in the same vector:</p>
@@ -793,6 +834,55 @@ function drawBox(){
   arrow(fR,'F at j+½','flux out');
   g.fillStyle=TX;g.font='600 13px '+FS();
   g.fillText('the box balance needs values at the faces — which are never stored',W/2,26);
+}
+
+function drawBoundary(){
+  const c=document.getElementById('c-boundary'); const {g,W,H}=ctxOf(c);
+  const TX=cvar('--tx'),TX2=cvar('--tx2'),TX3=cvar('--tx3'),AC=cvar('--accent'),
+        WM=cvar('--warm'),VI=cvar('--violet'),BD=cvar('--bd2'),SF=cvar('--surface-3'),
+        SOFT=cvar('--accent-soft');
+  g.font='12px '+FS();g.textAlign='center';
+  const n=5, bw=Math.min(96,W*0.15), gap=Math.max(10,(W-40-n*bw)/(n-1)), top=44, bh=64;
+  const x0=(W-(n*bw+(n-1)*gap))/2;
+  const slot=k=>x0+k*(bw+gap);
+  const labels=['box 0','box 1','box 2','⋯','box N'];
+  const ghost=0, last=4;
+  for(let k=0;k<n;k++){
+    const x=slot(k);
+    if(k===3){ // ellipsis slot, no box
+      g.fillStyle=TX3;g.font='600 20px '+FS();g.fillText('⋯',x+bw/2,top+bh/2+7);continue;
+    }
+    const isGhost=(k===ghost);
+    g.fillStyle=isGhost?SF:SOFT;
+    g.beginPath();
+    if(isGhost)g.setLineDash([4,4]);
+    g.strokeStyle=isGhost?TX3:AC;g.lineWidth=isGhost?1.3:1.6;
+    g.fillRect(x,top,bw,bh);g.strokeRect(x+0.5,top+0.5,bw,bh);
+    g.setLineDash([]);
+    g.fillStyle=isGhost?TX3:AC;g.font=(isGhost?'':'600 ')+'12.5px '+FS();
+    g.fillText(labels[k],x+bw/2,top+bh/2+4);
+  }
+  // face 0.5 marker: boundary between ghost/box1, i.e. the true inlet Z=0
+  const fx05=slot(1);
+  g.strokeStyle=WM;g.lineWidth=1.6;g.setLineDash([2,3]);
+  g.beginPath();g.moveTo(fx05,top-14);g.lineTo(fx05,top+bh+14);g.stroke();g.setLineDash([]);
+  g.fillStyle=WM;g.font='600 11px '+FS();
+  g.fillText('feed enters here',fx05,top-20);
+  g.font='10.5px '+FS();g.fillText('(face 0.5)',fx05,top+bh+28);
+  // outlet marker at the right edge of box N
+  const fxN=slot(last)+bw;
+  g.strokeStyle=VI;g.lineWidth=1.6;g.setLineDash([2,3]);
+  g.beginPath();g.moveTo(fxN,top-14);g.lineTo(fxN,top+bh+14);g.stroke();g.setLineDash([]);
+  g.fillStyle=VI;g.font='600 11px '+FS();
+  g.fillText('outlet',fxN,top-20);
+  g.font='10.5px '+FS();g.fillText('(face N+0.5)',fxN,top+bh+28);
+  // bracket under ghost-box1-box2 showing what face 1.5's stencil reads
+  const bx0=slot(0), bx2=slot(2)+bw, by=top+bh+42;
+  g.strokeStyle=cvar('--hot');g.lineWidth=1.6;
+  g.beginPath();g.moveTo(bx0,by);g.lineTo(bx2,by);g.moveTo(bx0,by-5);g.lineTo(bx0,by);
+  g.lineTo(bx0,by);g.moveTo(bx2,by-5);g.lineTo(bx2,by);g.stroke();
+  g.fillStyle=cvar('--hot');g.font='600 11px '+FS();
+  g.fillText('what the face-1.5 stencil reaches back through',(bx0+bx2)/2,by+16);
 }
 
 // ===========================================================================
@@ -1539,7 +1629,7 @@ function goto(i){
 }
 function drawStage(i){
   if(i===0){drawCells();drawBox();}
-  else if(i===1){drawStencil();drawAdv();}
+  else if(i===1){drawStencil();drawBoundary();drawAdv();}
   else if(i===2){drawScales();fillStiffNums();drawStiff();}
   else if(i===3){drawNewton();}
   else if(i===4){drawJacTeach();drawCellStrip();updateJacMsg();drawColouring();}
