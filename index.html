@@ -117,6 +117,7 @@
 </div>
 
 <h1>How a PDE becomes a matrix of numbers</h1>
+<p class="lede">A linear, single-variable PDE — the heat equation, the wave equation on its own — often has a closed-form answer: separate variables, write down a Fourier series, done. This system doesn't get that luxury. The isotherm is nonlinear, the velocity depends on a pressure field that is itself part of the unknown, and six fields feed back into each other's coefficients at every point in the column. No integral transform survives that much coupling. Once an exact formula is off the table, the only way forward is to give up on <i>the</i> answer and settle for a very large number of very good numbers instead — which is exactly what turns this into a numerical problem.</p>
 <p class="lede">Open a paper on adsorption simulation and you meet six coupled PDEs, a dual-site isotherm, and a page of dimensionless groups. It looks like one indivisible wall of algebra. It isn't. It's five decisions stacked on top of each other, and each one exists to fix a problem created by the one before it.</p>
 <p class="lede">Work through them in order and you'll see why WENO, the Jacobian and the implicit solver aren't three separate topics — they're one chain of consequences.</p>
 
