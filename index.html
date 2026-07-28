@@ -113,17 +113,7 @@
 <div class="wrap">
 
 <div class="hdr">
-  <div class="who"><b>Sunny Pawar</b>Finite-volume PSA solver · University of Alberta</div>
-  <svg width="212" height="42" viewBox="0 0 230 46" xmlns="http://www.w3.org/2000/svg" aria-label="University of Alberta">
-    <g>
-      <path d="M8 3 h30 v22 c0 9 -7 14 -15 17 c-8 -3 -15 -8 -15 -17 z" fill="var(--ua)"/>
-      <rect x="15" y="9" width="16" height="2.4" rx="1" fill="#fff"/>
-      <path d="M14 16 q5 -3 9 0 q4 -3 9 0 v3 q-5 -3 -9 0 q-4 -3 -9 0 z" fill="#fff"/>
-      <path d="M14 23 q5 -3 9 0 q4 -3 9 0 v3 q-5 -3 -9 0 q-4 -3 -9 0 z" fill="#fff"/>
-    </g>
-    <text x="50" y="20" fill="var(--ua)" style="font:550 15px var(--sans);letter-spacing:.5px;">UNIVERSITY</text>
-    <text x="50" y="38" fill="var(--ua)" style="font:550 15px var(--sans);letter-spacing:.5px;">OF ALBERTA</text>
-  </svg>
+  <div class="who"><b>Sunny Pawar</b>Finite-volume PSA solver</div>
 </div>
 
 <h1>How a PDE becomes numbers</h1>
@@ -230,12 +220,24 @@
     <h2 class="st">WENO's answer: let the data pick</h2>
     <p class="stsub">Step 2 · continued</p>
     <div class="prose">
-      <p>You can't know in advance where the fronts will be — they move. So you can't hard-code which stencil to trust. WENO's move is to <b>measure how rough each stencil's data looks and give the rough one less say</b>:</p>
+      <p>You can't know in advance where the fronts will be — they move. So you can't hard-code which stencil to trust. WENO's move is to <b>measure how rough each stencil's data looks and give the rough one less say</b>. Here is the paper's eq 30, same colouring rule as step 1: the cell averages you actually have are coloured, and each bracket is labelled with the stencil it came from.</p>
     </div>
-    <div class="eqwrap">$$\alpha_{0}=\frac{2/3}{(u_{j+1}-u_j+\delta)^4},\qquad \alpha_{1}=\frac{1/3}{(u_j-u_{j-1}+\delta)^4},\qquad w_k=\frac{\alpha_k}{\alpha_0+\alpha_1}$$</div>
+    <div class="eqwrap">$$\alpha_{0}=\frac{2/3}{\underbrace{(\textcolor{#185FA5}{u_{j+1}}-\textcolor{#185FA5}{u_j}+\delta)^4}_{\textcolor{#378ADD}{\text{centred stencil's jump}}}},\qquad \alpha_{1}=\frac{1/3}{\underbrace{(\textcolor{#185FA5}{u_j}-\textcolor{#185FA5}{u_{j-1}}+\delta)^4}_{\textcolor{#5B4BC4}{\text{upwind stencil's jump}}}},\qquad w_k=\frac{\alpha_k}{\alpha_0+\alpha_1}$$</div>
+    <div class="key" style="margin:14px 0;">
+      <span class="lbl">The rule hiding in the algebra</span>
+      Both stencils' jumps get raised to the <b>fourth power</b> before anything else happens. Whichever stencil sits across the smaller jump produces a small denominator, so its <code>α</code> is large and its normalized weight <code>w<sub>k</sub></code> dominates the blend. The rough stencil's jump is large, so its fourth power is enormous, and its <code>α</code> — and therefore its say in the answer — collapses almost as fast as the jump grows. Nothing is compared against a threshold; the arithmetic alone does the deciding.
+    </div>
     <div class="prose">
-      <p>Each stencil's weight carries the size of its own jump in the denominator, raised to the <b>fourth power</b>. A stencil spanning a steep change gets a large denominator, so its weight collapses fast. Where everything is smooth both differences are similar, the weights relax to 2/3 and 1/3, and you recover the high-order blend for free. No tuning, no flags, no "detect the shock" logic.</p>
-      <p>The bars below show the two weights for the data you set above. Drag the bars in the previous panel and watch these swing.</p>
+      <p>Where everything is smooth both jumps are similar, the weights relax to their default 2/3 and 1/3, and you recover a high-order blend for free — no tuning, no flags, no "detect the shock" logic. That blend is the paper's eq 31, the actual face value used in the simulation:</p>
+    </div>
+    <div class="eqwrap">$$\textcolor{#185FA5}{u_{j+1/2}}=\underbrace{w_0\left(\tfrac12\textcolor{#185FA5}{u_j}+\tfrac12\textcolor{#185FA5}{u_{j+1}}\right)}_{\textcolor{#378ADD}{\text{centred stencil, weighted}}}+\underbrace{w_1\left(\tfrac32\textcolor{#185FA5}{u_j}-\tfrac12\textcolor{#185FA5}{u_{j-1}}\right)}_{\textcolor{#5B4BC4}{\text{upwind stencil, weighted}}}$$</div>
+    <div class="legend" style="margin:0 0 6px;">
+      <span><b style="color:var(--accent);">coloured symbol</b> — the cell averages you actually have, wherever they appear</span>
+      <span><i style="border-top-color:var(--accent-2);"></i>the centred stencil's contribution to the blend</span>
+      <span><i style="border-top-color:var(--violet);"></i>the upwind-biased stencil's contribution</span>
+    </div>
+    <div class="prose">
+      <p>The bars below show <code>w<sub>0</sub></code> and <code>w<sub>1</sub></code> for the data you set in the previous panel. Drag those bars and watch these swing between the smooth-region defaults and a near-total collapse of whichever stencil crosses the front.</p>
     </div>
     <canvas id="c-weights" data-h="120"></canvas>
   </div>
