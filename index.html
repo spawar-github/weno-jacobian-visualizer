@@ -117,9 +117,9 @@
 </div>
 
 <h1>How a PDE becomes a matrix of numbers</h1>
-<p class="lede">A linear, single-variable PDE — the heat equation, the wave equation on its own — often has a closed-form answer: separate variables, write down a Fourier series, done. This system doesn't get that luxury. The isotherm is nonlinear, the velocity depends on a pressure field that is itself part of the unknown, and six fields feed back into each other's coefficients at every point in the column. No integral transform survives that much coupling. Once an exact formula is off the table, the only way forward is to give up on <i>the</i> answer and settle for a very large number of very good numbers instead — which is exactly what turns this into a numerical problem.</p>
-<p class="lede">Open a paper on adsorption simulation and you meet six coupled PDEs, a dual-site isotherm, and a page of dimensionless groups. It looks like one indivisible wall of algebra. It isn't. It's five decisions stacked on top of each other, and each one exists to fix a problem created by the one before it.</p>
-<p class="lede">Work through them in order and you'll see why WENO, the Jacobian and the implicit solver aren't three separate topics — they're one chain of consequences.</p>
+<p class="lede">Some equations can be solved with pencil and paper: a clean formula hands you the answer everywhere, forever. The equations in this model can't. They describe CO₂ gas being captured by a column packed with solid pellets — and the gas, the solid, the heat and the pressure all push on each other at once. That tangling kills every neat formula. When that happens there is exactly one way forward: let a computer chop the problem into small pieces and grind out millions of simple sums. This walkthrough shows how that grinding actually works.</p>
+<p class="lede">Open the source paper and you meet six coupled equations, an isotherm, and a page of Greek symbols. It looks like one indivisible wall of algebra. It isn't. It's five ordinary decisions stacked on top of each other, and each one exists only to fix a problem created by the one before it.</p>
+<p class="lede">Walk through them in order, and WENO, the Jacobian and the implicit solver stop being three intimidating terms — they become one chain of consequences you can follow.</p>
 
 <nav class="nav" id="nav" role="tablist" aria-label="Walkthrough steps"></nav>
 
@@ -129,8 +129,8 @@
     <h2 class="st">Where do the numbers actually live?</h2>
     <p class="stsub">Step 1 · discretisation</p>
     <div class="prose">
-      <p>A PDE makes a statement about every one of infinitely many points in the column. A computer holds a finite list. The finite volume method makes that trade-off explicit and honest: chop the column into <b>N boxes</b> and store <b>one number per box</b> — the average of the solution over that box.</p>
-      <p>That's the whole idea. Drag N below. The grey curve is the true concentration front; the bars are all the solver ever actually knows about it.</p>
+      <p>The equation describes the gas at every one of the <em>infinitely many</em> points inside the column. No computer can hold infinitely many numbers. The finite volume method makes that trade honestly: chop the column into <b>N boxes</b> and keep just <b>one number per box</b> — the average of whatever is inside it.</p>
+      <p>That's the whole idea. Drag the sliders below. The grey curve is reality; the blue bars are the computer's <em>entire</em> knowledge of it.</p>
     </div>
     <div class="bar">
       <label class="ctl">boxes N
@@ -147,7 +147,7 @@
     </div>
     <div class="key">
       <span class="lbl">The consequence</span>
-      Coarse grid, and the front becomes a staircase — you lose the very thing you were trying to resolve. Fine grid, and you have more unknowns to solve for. Every remaining decision in this walkthrough is about getting a sharp front <em>without</em> paying for a huge N.
+      Few boxes, and the sharp front turns into a blocky staircase — you lose the very thing you care about. Many boxes, and there are far more numbers to solve for, making everything downstream slower. Every remaining step of this walkthrough is about winning back sharpness <em>without</em> paying for a huge N.
     </div>
   </div>
 
@@ -155,13 +155,13 @@
     <h2 class="st">The balance that governs one box</h2>
     <p class="stsub">Step 1 · continued</p>
     <div class="prose">
-      <p>Nothing appears inside a box by magic. Its average can only change because material crosses its two faces, or because something is generated inside it. Written out, for box <i>j</i>, that is the generic shape:</p>
+      <p>A box works like a bank account. Its balance only changes for two reasons: money crossing the boundary — deposits and withdrawals through the two <b>faces</b> the box shares with its neighbours — or interest generated inside. Written out for box <i>j</i>, that's the generic shape (don't worry about the symbols yet — flux just means "flow through a face"):</p>
     </div>
     <div class="eqwrap">$$\frac{\partial u_j}{\partial \tau}=-\frac{F_{j+1/2}-F_{j-1/2}}{\Delta Z}\;+\;(\text{sources inside the box})$$</div>
     <canvas id="c-box" data-h="215"></canvas>
     <div class="key" style="margin:16px 0;">
       <span class="lbl">A rule you can apply by eye</span>
-      Below are the six balances exactly as the paper discretizes them (its eqs 20–24), one per field this simulation tracks. In every one of them: a term written at <code>j+0.5</code> or <code>j−0.5</code> is part of the <b style="color:var(--warm);">flux divergence</b> — it needs a face value. A term with no half-index anywhere in it is <b style="color:var(--violet);">source</b> — purely local to box <i>j</i>. That's the whole rule. Try it on each equation before reading the caption.
+      Below are the six bookkeeping rules the simulation actually uses — one per quantity it tracks — exactly as the paper writes them (its eqs 20–24). <b>You do not need to read every symbol.</b> Play spot-the-pattern instead: anything written at <code>j+0.5</code> or <code>j−0.5</code> sits at a <b style="color:var(--warm);">face</b> — it moves stuff between boxes. Anything with no face index is a <b style="color:var(--violet);">source</b> — it happens inside the box. That's the entire rule. Try it on each equation before reading its caption.
     </div>
     <div class="legend" style="margin:0 0 4px;">
       <span><b style="color:var(--accent);">coloured symbol</b> — this equation's own <code>u</code>, wherever it appears</span>
@@ -191,7 +191,7 @@
 
     <div class="key">
       <span class="lbl">The problem all six create</span>
-      Every one of these is still <b>exact</b> — no approximation has been made yet. But every flux bracket you just spotted asks for a value <b>at a face</b>, evaluated at <i>Z</i> = <i>j</i>±½. You only ever store box <em>averages</em>. Closing that gap is the entire job of step 2 — and it is where WENO comes from.
+      Every one of these is still <b>exact</b> — no approximation has been made yet. But every face term you just spotted asks for a value <b>at the wall between two boxes</b>, and the computer only stores box <em>averages</em>. Nobody stores wall values. Inventing them well is the entire job of step 2 — and it is where WENO comes from.
     </div>
   </div>
   <div class="navbtns"><span></span><button class="primary" data-goto="1">Next: the face value <i class="ti ti-arrow-right"></i></button></div>
@@ -203,10 +203,10 @@
     <h2 class="st">What value sits at the face?</h2>
     <p class="stsub">Step 2 · reconstruction</p>
     <div class="prose">
-      <p>You need a value at the face between box <i>j</i> and box <i>j+1</i>. You have box averages. So you interpolate — but from <em>which</em> neighbours? The paper offers two candidates (eq 30), and they are the two obvious ones:</p>
-      <p><b>The centred guess</b> — <code>½(u_j + u_{j+1})</code>. Splits the difference between the two boxes sharing the face. Accurate when the solution is smooth.<br>
-      <b>The upwind-biased guess</b> — <code>1.5·u_j − 0.5·u_{j−1}</code>. Ignores what's downstream and extrapolates from the side the flow is coming from.</p>
-      <p>Drag the three bars below. When the data lies on a straight line the two guesses agree and there's no dilemma. Create a jump and watch them split apart — one of them is now reading across a discontinuity, and it produces a face value that <b>overshoots every cell it was built from</b>.</p>
+      <p>You need a number at the wall between box <i>j</i> and box <i>j+1</i>, but all you have are box averages. So you estimate — the only question is <em>from which neighbours</em>. There are two natural guesses (the paper's eq 30):</p>
+      <p><b>The centred guess</b> — <code>½(u_j + u_{j+1})</code>. Split the difference between the two boxes touching the wall. Very accurate when things change gently.<br>
+      <b>The upwind-biased guess</b> — <code>1.5·u_j − 0.5·u_{j−1}</code>. Look at the two boxes <em>behind</em> the flow and extend their trend forward, ignoring what's downstream.</p>
+      <p>Drag the three bars below. When the data lies roughly on a straight line, the two guesses agree — no dilemma. Now make a cliff and watch them split: one guess is reading straight across the jump, and it <b>invents a value bigger than anything it was built from</b>.</p>
     </div>
     <canvas id="c-stencil" data-h="290"></canvas>
     <div class="bar">
@@ -221,12 +221,12 @@
     <h2 class="st">WENO's answer: let the data pick</h2>
     <p class="stsub">Step 2 · continued</p>
     <div class="prose">
-      <p>You can't know in advance where the fronts will be — they move. So you can't hard-code which stencil to trust. WENO's move is to <b>measure how rough each stencil's data looks and give the rough one less say</b>. Here is the paper's eq 30, same colouring rule as step 1: the cell averages you actually have are coloured, and each bracket is labelled with the stencil it came from.</p>
+      <p>Fronts move, so you can never hard-code which guess to trust where. WENO's move: <b>let the data itself decide, at every wall, at every moment</b>. Each guess gets scored by how bumpy its own patch of data looks — the bumpier witness gets the quieter voice. Here is that scoring (the paper's eq 30), with the same colouring rule as step 1:</p>
     </div>
     <div class="eqwrap">$$\alpha_{0}=\frac{2/3}{\underbrace{(\textcolor{#185FA5}{u_{j+1}}-\textcolor{#185FA5}{u_j}+\delta)^4}_{\textcolor{#378ADD}{\text{centred stencil's jump}}}},\qquad \alpha_{1}=\frac{1/3}{\underbrace{(\textcolor{#185FA5}{u_j}-\textcolor{#185FA5}{u_{j-1}}+\delta)^4}_{\textcolor{#5B4BC4}{\text{upwind stencil's jump}}}},\qquad w_k=\frac{\alpha_k}{\alpha_0+\alpha_1}$$</div>
     <div class="key" style="margin:14px 0;">
       <span class="lbl">The rule hiding in the algebra</span>
-      Both stencils' jumps get raised to the <b>fourth power</b> before anything else happens. Whichever stencil sits across the smaller jump produces a small denominator, so its <code>α</code> is large and its normalized weight <code>w<sub>k</sub></code> dominates the blend. The rough stencil's jump is large, so its fourth power is enormous, and its <code>α</code> — and therefore its say in the answer — collapses almost as fast as the jump grows. Nothing is compared against a threshold; the arithmetic alone does the deciding.
+      Each guess's jump gets raised to the <b>fourth power</b> and put in a denominator. Small jump → huge weight. Big jump → the fourth power explodes, and that guess's say in the answer collapses toward zero almost instantly. There is no threshold, no if-statement, no "shock detector" — the arithmetic alone does the deciding.
     </div>
     <div class="prose">
       <p>Where everything is smooth both jumps are similar, the weights relax to their default 2/3 and 1/3, and you recover a high-order blend for free — no tuning, no flags, no "detect the shock" logic. That blend is the paper's eq 31, the actual face value used in the simulation:</p>
@@ -295,7 +295,7 @@
     <div class="stats" id="advstats" style="margin-top:12px;"></div>
     <div class="key">
       <span class="lbl">Why this matters for adsorption</span>
-      Those wiggles are not cosmetic. An overshoot drives a mole fraction below 0 or above 1, you feed that into a Langmuir isotherm, and you get a negative loading or a divide-by-zero. The simulation doesn't degrade — it dies. WENO is what keeps the physics evaluable.
+      Those wiggles are not cosmetic. A wiggle can push a concentration below zero — and "a negative amount of gas" makes the physics formulas divide by nonsense. The simulation doesn't get gradually worse; it dies on the spot. WENO is what keeps every number physically legal.
     </div>
   </div>
   <div class="navbtns"><button data-goto="0"><i class="ti ti-arrow-left"></i> Back</button><button class="primary" data-goto="2">Next: why not just step forward? <i class="ti ti-arrow-right"></i></button></div>
@@ -330,7 +330,7 @@
     </div>
     <canvas id="c-scales" data-h="215"></canvas>
     <div class="prose">
-      <p>The CO₂ front you actually care about takes thousands of seconds to cross the column. The pressure field re-equilibrates through Darcy's law almost instantly. An explicit step size is held hostage by the <b>fastest</b> process even though you only care about the slowest — that is exactly what <b>stiff</b> means.</p>
+      <p>The CO₂ front you actually care about takes over an hour to cross the column. The pressure field rebalances in a fraction of a millisecond. A step-forward method is forced to tick at the speed of the <b>fastest</b> process even though you only care about the slowest — like filming a glacier with the shutter speed set for a hummingbird. That is exactly what <b>stiff</b> means.</p>
     </div>
     <div class="stats" id="stiffnums"></div>
   </div>
@@ -348,7 +348,7 @@
     <div class="eqwrap">$$y^{n+1}=\underbrace{(1-\lambda\Delta\tau)}_{\textcolor{#C0392B}{\text{amplification factor — explicit}}}y^{n}\qquad\qquad y^{n+1}=\underbrace{\frac{1}{1+\lambda\Delta\tau}}_{\textcolor{#185FA5}{\text{amplification factor — implicit}}}y^{n}$$</div>
     <div class="key" style="margin:14px 0;">
       <span class="lbl">The rule hiding in the algebra</span>
-      A method stays bounded exactly when its amplification factor has magnitude <b>≤ 1</b>. The explicit factor <code>1−λΔτ</code> drops below −1 the moment <code>λΔτ</code> passes 2 — that's the wall the slider is about to hit. The implicit factor <code>1/(1+λΔτ)</code> sits between 0 and 1 for <em>any</em> <code>λΔτ &gt; 0</code>, no matter how large — there is no wall to hit.
+      Each step just multiplies the answer by that bracketed number. A method survives only if that multiplier stays between −1 and 1. The explicit multiplier <code>1−λΔτ</code> falls below −1 the moment <code>λΔτ</code> passes 2 — that's the cliff the slider is about to hit. The implicit multiplier <code>1/(1+λΔτ)</code> is always between 0 and 1, <em>no matter how big the step</em>. There is no cliff.
     </div>
     <div class="prose">
       <p>Push the slider and watch what each method does as the step gets large relative to the decay rate.</p>
@@ -379,8 +379,8 @@
     </div>
     <div class="eqwrap">$$\textcolor{#185FA5}{\mathbf u^{n+1}}=\mathbf u^{n}+\Delta\tau\,\underbrace{\mathbf F(\textcolor{#185FA5}{\mathbf u^{n+1}})}_{\textcolor{#B4530A}{\text{the unknown, buried inside a nonlinear function}}}$$</div>
     <div class="prose">
-      <p>Look carefully at where the coloured symbol sits. It's on <em>both</em> sides, and on the right it's buried inside <b>F</b> — inside a Langmuir isotherm, inside an Arrhenius exponential, inside WENO's fourth powers. There is no rearranging this. You cannot compute <code>u^{n+1}</code>; you can only <b>hunt for it</b>.</p>
-      <p>So turn it into a root-finding problem. Define a residual that is zero exactly when you've got the right answer:</p>
+      <p>Look where the coloured symbol sits: on <em>both</em> sides, and on the right it's buried deep inside <b>F</b> — inside every nonlinear formula of the model. No amount of algebra can dig it out. You cannot <em>compute</em> the answer; you can only <b>hunt for it</b>: guess, measure how wrong you are, improve the guess, repeat.</p>
+      <p>So give the wrongness a name. Define a residual <b>r</b> — a "how wrong is this guess" score that hits zero exactly when the guess is right:</p>
     </div>
     <div class="eqwrap">$$\mathbf r(\textcolor{#185FA5}{\mathbf u})=\textcolor{#185FA5}{\mathbf u}-\mathbf u^{n}-\Delta\tau\,\mathbf F(\textcolor{#185FA5}{\mathbf u})\;\underbrace{\overset{!}{=}\;\mathbf 0}_{\textcolor{#5B4BC4}{\text{true exactly when }\mathbf u\text{ solves the step}}}$$</div>
     <div class="legend" style="margin:0 0 4px;">
@@ -424,7 +424,7 @@
       <span><b style="color:var(--accent);">u<sub>k</sub></b> — the one unknown being nudged; <b style="color:var(--warm);">the bracket</b> — every residual's response to that nudge, all at once</span>
     </div>
     <div class="prose">
-      <p>With M unknowns that's M² entries. For a real run that number gets absurd fast. But almost every one of them is <b>exactly zero</b>, and step 2 already told you why.</p>
+      <p>Think of J as a giant who-affects-whom table. With M unknowns that's M² questions to answer — absurd for a real run. But almost every answer is <b>exactly zero</b>: a nudge in one box simply cannot be felt across the column within a single step, because WENO only ever looks at a box's immediate neighbours.</p>
       <p><b>Hover over any column below.</b> The strip underneath shows the column of boxes; the highlighted ones are the only boxes whose balance changes when you nudge that unknown.</p>
     </div>
     <div class="grid2" style="align-items:start;">
@@ -462,7 +462,7 @@
     </div>
     <canvas id="c-color" data-h="150"></canvas>
     <div class="prose">
-      <p>Two columns further apart than the bandwidth disturb <b>completely disjoint sets of rows</b>, so they can be nudged in the same evaluation and their effects read off separately without ever getting confused. Columns sharing a colour above are probed together. That turns M evaluations into <b>25</b> — for any N.</p>
+      <p>Two unknowns far enough apart touch <b>completely different rows</b> of the table, so they can be nudged in the <em>same</em> experiment and their effects read off separately — like interviewing witnesses in separate rooms at the same time. Columns sharing a colour above are probed together. That turns M experiments into just <b>25</b> — no matter how big N gets.</p>
     </div>
   </div>
   <div class="navbtns"><button data-goto="3"><i class="ti ti-arrow-left"></i> Back</button><button class="primary" data-goto="5">Next: all five, running <i class="ti ti-arrow-right"></i></button></div>
@@ -474,7 +474,7 @@
     <h2 class="st">All five pieces, running together</h2>
     <p class="stsub">Step 6 · the real simulation</p>
     <div class="prose">
-      <p>This is the full model — six coupled PDEs per box, dual-site Langmuir isotherm, Darcy velocity, bed and wall energy — carrying CO₂ into a column of zeolite 13X that starts full of nitrogen. Every piece you just built is doing its job here: cells hold the state, WENO closes the faces, the method of lines makes it an ODE system, Newton solves each implicit step, and the banded Jacobian makes each Newton iteration cheap.</p>
+      <p>This is the real thing — all six equations per box, the full isotherm, heat and pressure included — simulating CO₂ pushed into a column that starts full of nitrogen. Every piece you just built is on duty right now: boxes hold the numbers, WENO invents the wall values, Newton hunts down each implicit step, and the banded who-affects-whom table keeps every hunt cheap.</p>
     </div>
     <div class="bar">
       <button id="play" class="primary"><i class="ti ti-player-play"></i><span>Run</span></button>
@@ -586,7 +586,7 @@
     </div>
     <div class="key">
       <span class="lbl">The one-sentence version</span>
-      WENO makes the flux at every face well-defined and non-oscillatory; that turns the PDE into a stiff ODE system that only an implicit method can step through efficiently; implicit means solving a nonlinear system every step with Newton; and Newton needs a Jacobian solved every iteration, which is only affordable because WENO's own compact stencil is what made that Jacobian banded in the first place. Each piece exists because of the one before it — the loop you just traced is that chain, running.
+      Boxes turn an impossible infinity into a finite list of numbers. WENO invents trustworthy wall values so those numbers can trade with their neighbours without inventing wiggles. The result is a system with fast and slow clocks in it, which forces an implicit method. Implicit means every step is a guess-and-check hunt (Newton). And each round of that hunt needs the who-affects-whom table — which stays small and cheap only because WENO looks no further than a box's neighbours. Each piece exists because of the one before it. The loop you just traced is that chain, running.
     </div>
   </div>
   <div class="navbtns"><button data-goto="5"><i class="ti ti-arrow-left"></i> Back</button><button data-goto="0"><i class="ti ti-refresh"></i>Start over</button></div>
