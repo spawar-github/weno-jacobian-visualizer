@@ -756,12 +756,12 @@ function drawStencil(){
   const G=stencilGeom(W,H);
   const TX=cvar('--tx'),TX2=cvar('--tx2'),TX3=cvar('--tx3'),BD=cvar('--bd'),
         AC=cvar('--accent'),AC2=cvar('--accent-2'),VI=cvar('--violet'),HT=cvar('--hot');
-  const lo=0,hi=1.15, Yv=v=>G.pt+G.h-G.h*(v-lo)/(hi-lo);
+  const lo=0,hi=1.40, Yv=v=>G.pt+G.h-G.h*(v-lo)/(hi-lo);
   g.font='11px '+FS();
   g.strokeStyle=BD;g.fillStyle=TX2;g.textAlign='right';
-  for(let q=0;q<=2;q++){const yy=Math.round(G.pt+G.h*q/2)+0.5;
+  for(let q=0;q<=4;q++){const yy=Math.round(G.pt+G.h*q/4)+0.5;
     g.beginPath();g.moveTo(G.pl,yy);g.lineTo(G.pl+G.w,yy);g.stroke();
-    g.fillText((hi-(hi-lo)*q/2).toFixed(2),G.pl-7,G.pt+G.h*q/2+4);}
+    g.fillText((hi-(hi-lo)*q/4).toFixed(2),G.pl-7,G.pt+G.h*q/4+4);}
   // bars
   g.textAlign='center';
   const names=['u (j−1)','u (j)','u (j+1)'];
@@ -791,8 +791,9 @@ function drawStencil(){
   mark(f.cen,AC2,'centred',-2);
   mark(f.upw,VI,'upwind-biased',12);
   mark(f.val,HT,'WENO blend',-16);
-  // range band of the cell data
-  const mn=Math.min(stencil[1],stencil[2]), mx=Math.max(stencil[1],stencil[2]);
+  // range band of the cell data the face was built from
+  const mn=Math.min(stencil[0],stencil[1],stencil[2]),
+        mx=Math.max(stencil[0],stencil[1],stencil[2]);
   g.fillStyle=cvar('--good');g.globalAlpha=.10;
   g.fillRect(fx-26,Yv(mx),52,Yv(mn)-Yv(mx));g.globalAlpha=1;
   g.fillStyle=TX;g.font='600 12.5px '+FS();g.textAlign='left';
@@ -802,9 +803,11 @@ function drawStencil(){
   const spread=Math.abs(f.cen-f.upw);
   const el=document.getElementById('s2msg');
   if(over){
-    el.innerHTML='<span class="lbl">Look what just happened</span>The upwind-biased guess returned <b>'+f.upw.toFixed(3)+
-      '</b>, which is outside the range of the two boxes touching this face (green band, '+mn.toFixed(3)+' to '+mx.toFixed(3)+
-      '). It invented a value that exists in none of the data. Blend that in at a fixed weight and you have an <b>overshoot</b> — the oscillation that wrecks a nonlinear isotherm. WENO sees the same roughness you do and pulls that stencil\'s weight down to '+f.w1.toFixed(3)+'.';
+    el.innerHTML='<span class="lbl">This is the failure, right here</span>The upwind-biased guess returned <b>'+f.upw.toFixed(3)+
+      '</b>. Every box it was built from lies between '+mn.toFixed(3)+' and '+mx.toFixed(3)+
+      ' (green band) — so it has <b>invented a value that appears nowhere in the data</b>. That is an overshoot, and a fixed-weight scheme would blend it in regardless. '+
+      'Feed a mole fraction like that into a Langmuir isotherm and the run dies. WENO reads the same roughness you can see and has already cut that stencil\'s weight to <b>'+
+      f.w1.toFixed(4)+'</b>, so its blended answer is '+f.val.toFixed(3)+' — back inside the data.';
   } else if(spread<0.004){
     el.innerHTML='<span class="lbl">No dilemma here</span>The data is essentially straight, so both stencils return nearly the same face value ('+
       f.cen.toFixed(3)+' vs '+f.upw.toFixed(3)+') and it makes no difference how you weight them. The weights sit near their ideal 2/3 and 1/3, and the blend is high-order accurate. <b>This is the easy case — and most of the column is in it.</b>';
@@ -841,14 +844,14 @@ function stencilPointer(c,ev,down){
   const rect=c.getBoundingClientRect();
   const x=ev.clientX-rect.left, y=ev.clientY-rect.top;
   const G=stencilGeom(rect.width,+c.dataset.h);
-  const lo=0,hi=1.15;
+  const lo=0,hi=1.40;
   if(down){
     dragIdx=-1;
     for(let k=0;k<3;k++) if(Math.abs(x-G.xs[k])<G.bw/2+8) dragIdx=k;
   }
   if(dragIdx>=0){
     let v=lo+(hi-lo)*(G.pt+G.h-y)/G.h;
-    stencil[dragIdx]=Math.max(0.02,Math.min(1.12,v));
+    stencil[dragIdx]=Math.max(0.02,Math.min(1.10,v));
     drawStencil();
   }
 }
@@ -1472,7 +1475,7 @@ cst.addEventListener('pointermove',e=>{if(dragIdx>=0)stencilPointer(cst,e,false)
 cst.addEventListener('pointerup',()=>{dragIdx=-1;});
 cst.addEventListener('pointercancel',()=>{dragIdx=-1;});
 document.getElementById('s2smooth').onclick=()=>{stencil=[0.32,0.52,0.72];drawStencil();};
-document.getElementById('s2jump').onclick=()=>{stencil=[0.18,0.22,0.95];drawStencil();};
+document.getElementById('s2jump').onclick=()=>{stencil=[0.10,0.90,1.00];drawStencil();};
 document.getElementById('advplay').onclick=()=>{
   if(advT>=1-1e-9)return;
   advPlaying=!advPlaying;setAdvBtn();
