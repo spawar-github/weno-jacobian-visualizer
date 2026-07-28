@@ -546,8 +546,11 @@
     <div style="display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px;align-items:start;">
       <canvas id="c-map" data-h="600" style="cursor:pointer;"></canvas>
       <div>
-        <p style="font-size:11.5px;color:var(--tx3);margin:0 0 6px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;">y<sub>CO₂</sub> across the column, right now</p>
-        <canvas id="c-mapstate" data-h="170"></canvas>
+        <p style="font-size:11.5px;color:var(--tx3);margin:0 0 6px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;">What just changed — Δy<sub>CO₂</sub> vs uⁿ, per box</p>
+        <canvas id="c-mapdelta" data-h="110"></canvas>
+        <p id="mapdeltacap" style="font-size:10.5px;color:var(--tx3);margin:4px 0 0;line-height:1.4;"></p>
+        <p style="font-size:11.5px;color:var(--tx3);margin:14px 0 6px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;">For orientation — where the front actually sits</p>
+        <canvas id="c-mapstate" data-h="100"></canvas>
         <div class="legend" style="margin:6px 0 0;font-size:11px;">
           <span><i style="border-top-color:var(--tx3);border-top-style:dashed;"></i>uⁿ — last accepted step</span>
           <span><i style="border-top-color:var(--accent);"></i>current iterate</span>
@@ -1624,7 +1627,9 @@ function buildTrace(dtv){
     outcome='maxit';
   }
   setGrid(keepN);
-  return {ev:ev,dt:dtv,outcome:outcome,its:it,maxit:MAXIT,finalR:cur,unProfile:unProfile};
+  let maxDelta=1e-9;
+  for(const e of ev){for(let j=0;j<TEACH.N;j++)maxDelta=Math.max(maxDelta,Math.abs(e.yprof[j]-unProfile[j]));}
+  return {ev:ev,dt:dtv,outcome:outcome,its:it,maxit:MAXIT,finalR:cur,unProfile:unProfile,maxDelta:maxDelta};
 }
 
 function layoutMap(W){
@@ -1834,7 +1839,44 @@ function drawMapState(){
   g.fillStyle=col;
   for(let j=0;j<n;j++){g.beginPath();g.arc(X(j),Yv(e.yprof[j]),2.4,0,7);g.fill();}
 }
-function mapRender(){drawMap();drawMapState();updateMapPanel();}
+function drawMapDelta(){
+  const c=document.getElementById('c-mapdelta'); const {g,W,H}=ctxOf(c);
+  if(!MAP.traces)return;
+  const TX=cvar('--tx'),TX2=cvar('--tx2'),TX3=cvar('--tx3'),BD=cvar('--bd'),
+        AC=cvar('--accent'),HT=cvar('--hot'),VI=cvar('--violet');
+  const tr=MAP.traces[MAP.dtIdx], evs=tr.ev;
+  const pos=Math.min(MAP.pos,evs.length-1), e=evs[pos];
+  const n=e.yprof.length;
+  const pl=44,pr=8,pt=8,pb=14,w=W-pl-pr,h=H-pt-pb;
+  const scale=tr.maxDelta*1.15;
+  const X=j=>pl+(j+0.5)/n*w, bw=Math.max(3,w/n*0.62);
+  const Yzero=pt+h/2, Yv=v=>Yzero-(h/2)*(v/scale);
+  g.font='9.5px '+FS();
+  g.strokeStyle=BD;g.lineWidth=1;g.fillStyle=TX2;g.textAlign='right';
+  [1,0,-1].forEach(f=>{const yy=Math.round(Yzero-(h/2)*f)+0.5;
+    g.beginPath();g.moveTo(pl,yy);g.lineTo(pl+w,yy);g.stroke();
+    g.fillText((f===0?'0':(f*scale).toExponential(1)),pl-6,yy+3);});
+  g.strokeStyle=TX3;g.globalAlpha=.5;g.lineWidth=1;
+  g.beginPath();g.moveTo(pl+.5,pt);g.lineTo(pl+.5,pt+h);g.lineTo(pl+w,pt+h);g.stroke();g.globalAlpha=1;
+  let col=AC;
+  if(e.node==='reject')col=VI; else if(e.node==='jac'||e.node==='solve')col=HT;
+  let maxAbsHere=0;
+  for(let j=0;j<n;j++){
+    const delta=e.yprof[j]-tr.unProfile[j];
+    maxAbsHere=Math.max(maxAbsHere,Math.abs(delta));
+    const y0=Yzero,y1=Yv(delta);
+    g.fillStyle=col;g.globalAlpha=.85;
+    g.fillRect(X(j)-bw/2,Math.min(y0,y1),bw,Math.max(1,Math.abs(y1-y0)));
+    g.globalAlpha=1;
+  }
+  const cap=document.getElementById('mapdeltacap');
+  if(cap){
+    cap.textContent = maxAbsHere<1e-8
+      ? 'No change yet at this point in the trace — the correction hasn’t been applied.'
+      : 'Largest per-box change right now: '+maxAbsHere.toExponential(2)+'  (axis fixed to this step’s largest correction, '+tr.maxDelta.toExponential(2)+', so frames stay comparable).';
+  }
+}
+function mapRender(){drawMap();drawMapDelta();drawMapState();updateMapPanel();}
 function mapGo(p){
   const evs=MAP.traces[MAP.dtIdx].ev;
   MAP.pos=Math.max(0,Math.min(p,evs.length-1));
