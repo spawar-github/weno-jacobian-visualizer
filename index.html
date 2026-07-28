@@ -545,7 +545,13 @@
     <div style="display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px;align-items:start;">
       <canvas id="c-map" data-h="600" style="cursor:pointer;"></canvas>
       <div>
-        <div id="mapnow" class="key" style="margin-top:0;"></div>
+        <p style="font-size:11.5px;color:var(--tx3);margin:0 0 6px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;">y<sub>CO₂</sub> across the column, right now</p>
+        <canvas id="c-mapstate" data-h="170"></canvas>
+        <div class="legend" style="margin:6px 0 0;font-size:11px;">
+          <span><i style="border-top-color:var(--tx3);border-top-style:dashed;"></i>uⁿ — last accepted step</span>
+          <span><i style="border-top-color:var(--accent);"></i>current iterate</span>
+        </div>
+        <div id="mapnow" class="key" style="margin-top:14px;"></div>
         <p style="font-size:11.5px;color:var(--tx3);margin:14px 0 6px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;">Cost of this one step, so far</p>
         <table style="margin:0;">
           <tr><td>WENO passes over the column</td><td class="num" style="text-align:right;" id="ct-f">0</td></tr>
@@ -1529,7 +1535,9 @@ function buildTrace(dtv){
   const rv=new Float64Array(M),tr=new Float64Array(M),d=new Float64Array(M),sc2=new Float64Array(M);
   let nF=0,nJ=0,nS=0;
   const ev=[];
-  const push=(node,head,detail)=>ev.push({node:node,head:head,detail:detail,nF:nF,nJ:nJ,nS:nS});
+  const snap=st=>{const p=new Array(TEACH.N);for(let j=0;j<TEACH.N;j++)p[j]=st[NF*j];return p;};
+  const unProfile=snap(un);
+  const push=(node,head,detail)=>ev.push({node:node,head:head,detail:detail,nF:nF,nJ:nJ,nS:nS,yprof:snap(s)});
 
   push('state','The step begins',
     'All we hold is u<sup>n</sup>, the converged answer from the previous step — '+M+
@@ -1615,7 +1623,7 @@ function buildTrace(dtv){
     outcome='maxit';
   }
   setGrid(keepN);
-  return {ev:ev,dt:dtv,outcome:outcome,its:it,maxit:MAXIT,finalR:cur};
+  return {ev:ev,dt:dtv,outcome:outcome,its:it,maxit:MAXIT,finalR:cur,unProfile:unProfile};
 }
 
 function layoutMap(W){
@@ -1794,7 +1802,38 @@ function updateMapPanel(){
   document.getElementById('mapprev').disabled=pos===0;
   document.getElementById('mapnext').disabled=done;
 }
-function mapRender(){drawMap();updateMapPanel();}
+function drawMapState(){
+  const c=document.getElementById('c-mapstate'); const {g,W,H}=ctxOf(c);
+  if(!MAP.traces)return;
+  const TX2=cvar('--tx2'),TX3=cvar('--tx3'),BD=cvar('--bd'),AC=cvar('--accent'),
+        HT=cvar('--hot'),VI=cvar('--violet');
+  const tr=MAP.traces[MAP.dtIdx], evs=tr.ev;
+  const pos=Math.min(MAP.pos,evs.length-1), e=evs[pos];
+  const n=e.yprof.length;
+  const pl=34,pr=10,pt=8,pb=20,w=W-pl-pr,h=H-pt-pb;
+  const hi=0.16;
+  const X=j=>pl+(j+0.5)/n*w, Yv=v=>pt+h-h*Math.max(0,Math.min(1,v/hi));
+  g.font='10px '+FS();
+  g.strokeStyle=BD;g.lineWidth=1;g.fillStyle=TX2;g.textAlign='right';
+  [0,0.5,1].forEach(f=>{const yy=Math.round(pt+h*(1-f))+0.5;
+    g.beginPath();g.moveTo(pl,yy);g.lineTo(pl+w,yy);g.stroke();
+    g.fillText((hi*f).toFixed(2),pl-6,yy+3);});
+  g.strokeStyle=TX2;g.globalAlpha=.4;g.lineWidth=1;
+  g.beginPath();g.moveTo(pl+.5,pt);g.lineTo(pl+.5,pt+h);g.lineTo(pl+w,pt+h);g.stroke();g.globalAlpha=1;
+  // baseline: last accepted step
+  g.strokeStyle=TX3;g.lineWidth=1.6;g.setLineDash([4,3]);g.beginPath();
+  for(let j=0;j<n;j++){const yy=Yv(tr.unProfile[j]);j?g.lineTo(X(j),yy):g.moveTo(X(j),yy);}
+  g.stroke();g.setLineDash([]);
+  // current iterate - colour reflects what just happened
+  let col=AC;
+  if(e.node==='reject')col=VI; else if(e.node==='jac'||e.node==='solve')col=HT;
+  g.strokeStyle=col;g.lineWidth=2.4;g.lineJoin='round';g.beginPath();
+  for(let j=0;j<n;j++){const yy=Yv(e.yprof[j]);j?g.lineTo(X(j),yy):g.moveTo(X(j),yy);}
+  g.stroke();
+  g.fillStyle=col;
+  for(let j=0;j<n;j++){g.beginPath();g.arc(X(j),Yv(e.yprof[j]),2.4,0,7);g.fill();}
+}
+function mapRender(){drawMap();drawMapState();updateMapPanel();}
 function mapGo(p){
   const evs=MAP.traces[MAP.dtIdx].ev;
   MAP.pos=Math.max(0,Math.min(p,evs.length-1));
