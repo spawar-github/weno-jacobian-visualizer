@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How a PDE becomes numbers — WENO, the Jacobian and the implicit solver</title>
+<title>How a PDE becomes a matrix of numbers — WENO, the Jacobian and the implicit solver</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
@@ -116,7 +116,7 @@
   <div class="who"><b>Sunny Pawar</b>Finite-volume PSA solver</div>
 </div>
 
-<h1>How a PDE becomes numbers</h1>
+<h1>How a PDE becomes a matrix of numbers</h1>
 <p class="lede">Open a paper on adsorption simulation and you meet six coupled PDEs, a dual-site isotherm, and a page of dimensionless groups. It looks like one indivisible wall of algebra. It isn't. It's five decisions stacked on top of each other, and each one exists to fix a problem created by the one before it.</p>
 <p class="lede">Work through them in order and you'll see why WENO, the Jacobian and the implicit solver aren't three separate topics — they're one chain of consequences.</p>
 
