@@ -1,50 +1,28 @@
-# WENO · Jacobian · implicit ODE solvers
+# How a PDE becomes a matrix of numbers
 
-**[▶ Open the live visualizer](https://spawar-github.github.io/weno-jacobian-visualizer/)**
+**[▶ Open the live walkthrough](https://spawar-github.github.io/weno-jacobian-visualizer/)**
 
-An interactive, single-file explainer for how WENO reconstruction, the banded Jacobian, and implicit ODE integration work together in a finite-volume adsorption solver — reproducing the dynamic column breakthrough (DCB) case study of Haghpanah, Majumder, Nilam, Rajendran, Farooq, Karimi & Amanullah, *Ind. Eng. Chem. Res.* 2013, 52, 4249–4265.
+An interactive, single-file explainer for how WENO reconstruction, the banded Jacobian, and an implicit ODE solver work together to turn a coupled PDE system into a running numerical simulation. It's built around a real CO₂/N₂ breakthrough model on zeolite 13X — the case study of Haghpanah, Majumder, Nilam, Rajendran, Farooq, Karimi & Amanullah, *Ind. Eng. Chem. Res.* 2013, 52, 4249–4265 — but the point isn't to reproduce the paper's figures. It's to make the *construction* of the numerical solution visible, one decision at a time, for someone meeting this kind of model for the first time.
 
-It runs a real method-of-lines simulation in the browser — no build step, no dependencies beyond two CDN stylesheets — integrating CO₂/N₂ breakthrough on zeolite 13X out to real time τ = 8000 s while you watch.
+Everything runs client-side in the browser: no build step, no backend, no dependencies beyond two CDN stylesheets (KaTeX for the math, Tabler for icons).
 
-## What it simulates
+## The seven steps
 
-Six coupled dimensionless PDEs per finite-volume cell (paper eqs 1–7), with the paper's own column geometry, isotherm and operating parameters (Tables 2–3):
+1. **Where the numbers live** — cell averages, the box balance, and why it needs face values nobody stores. Includes the model's actual initial condition and all six discretized balance equations (component mass, pressure, solid loading ×2, bed energy, wall energy) in the paper's own box-indexed notation.
+2. **What sits at the face** — the two candidate stencils, WENO's smoothness weights, a draggable demo that produces a genuine overshoot, a three-way race (upwind / fixed-weight / WENO) around a periodic domain, and the boundary conditions at both ends of the column (the real inlet/outlet physics vs. the purely numerical ghost-cell trick).
+3. **Why not just step forward** — the timescale spread that makes this system stiff, and the explicit-vs-implicit amplification factor on the simplest possible stiff ODE.
+4. **Solving the step** — Newton's method on the implicit residual, stepped iteration by iteration, including the honest case where it doesn't converge and the step gets rejected.
+5. **Why the Jacobian is banded** — hover any column of a real Jacobian to see exactly which boxes it touches, then the finite-difference colouring trick that builds the whole band in 25 probes instead of one per unknown.
+6. **All of it, running** — the full six-field model, live: breakthrough curves at the column exit and profiles along the bed, reproducing the paper's roll-up effect (the CO₂ front outrunning the slower thermal front).
+7. **The whole loop, traced** — not a diagram. A real implicit time step, run live on a small grid, stepped operation-by-operation with the actual residual norms, Jacobian probe counts, and line-search values it produces — alongside an auto-scaled view of what the CO₂ profile is actually doing at each operation.
 
-| Field | Equation |
-|---|---|
-| `y` | component mass balance (CO₂ gas fraction) |
-| `x₁`, `x₂` | CO₂ and N₂ solid loadings, linear-driving-force uptake |
-| `T` | bed energy balance |
-| `T_w` | wall energy balance |
-| `P` | total mass balance → pressure, with Darcy velocity |
+## The model underneath
 
-A dual-site Langmuir isotherm with Arrhenius, temperature-dependent affinities couples the two fronts: the CO₂ concentration front runs ahead of the slower thermal front, so the outlet composition plateaus *below* the feed value until the heat front elutes — the roll-up effect the paper's Figure 4 shows.
-
-## What you can see
-
-- **Breakthrough at the column exit** — outlet velocity, temperature and CO₂ fraction vs time, plotted against a reference curve digitized from the paper's Figure 4a, with the two transition times (520 s, 3600 s) it reports marked.
-- **Validation cards** — live comparison of transition times and plateau levels against the paper's numbers, with a percent-error readout.
-- **Column profiles** — CO₂ gas fraction, bed temperature and solid loading along the column at the current time.
-- **The banded Jacobian** — the top-left 6×6 cell blocks of `J = I − c·Δτ·∂F/∂u`, rendered as a heat map, plus the actual dense-vs-band entry counts and the number of colouring probes used to build it.
-- **WENO reconstruction** — pick a field and a cell, and watch the two stencil weights blend at the face. Near a sharp front the steep-side weight collapses, which is exactly how WENO kills oscillations without tuning.
-
-Interactive controls for grid resolution N, the adaptive solver's max step size, and the LDF mass-transfer rate.
-
-## Why each piece is there
-
-The physics forces the choices. A sharp, self-sharpening concentration front makes naïve high-order schemes ring — overshoots push a mole fraction out of [0,1] and break the isotherm — while low-order upwinding smears the front. WENO resolves both. Finite-volume framing makes the face values conservative by construction. The resulting system is stiff (the solid-to-gas capacity ratio ψ ≈ 279), so an implicit integrator is needed to take useful step sizes, which means a damped-Newton solve and a Jacobian each step. WENO's compact stencil is what makes that Jacobian banded (lower half-bandwidth 12, upper 11 for six fields), and the solver builds it with 25 coloured finite-difference probes instead of one per state variable, then factorises it in band storage.
-
-Remove any one piece and the simulation is inaccurate, unstable, or too slow.
-
-## How closely this matches the paper
-
-Every qualitative feature of Figure 4a reproduces: the initial outlet-velocity dip, the sharp CO₂ transition onto a plateau below the feed composition, the temperature plateau, and the second transition where the heat front elutes and the outlet reaches the 0.15 feed value. Transition times land within about 2% of the ≈520 s / ≈3600 s the paper states in its text; the plateau levels match to better than 1%.
-
-Two honest caveats. The reference curve drawn in the app is digitized by eye from Figure 4a — a guide, not data; the dotted verticals at 520 s and 3600 s are the numbers the paper actually states, and are the more reliable comparison. And the paper's own reference run used 2000 volume elements, while a browser is tuned here for a few dozen; raising N narrows the fronts further, but the transition times and plateau levels are already grid-converged at N ≈ 40.
+Six coupled dimensionless PDEs per finite-volume cell — component mass, total mass/pressure, two solid loadings, bed energy, wall energy — with a dual-site Langmuir isotherm and Arrhenius temperature dependence, using the paper's own column geometry and operating parameters (its Tables 2–3). WENO closes every face; a damped Newton iteration solves each implicit step; the Jacobian is built and factorised in band storage rather than densely.
 
 ## Running locally
 
-Open `index.html` in any modern browser. That's the whole thing — the simulation, the rendering, and the math typesetting all live in that one file.
+Open `index.html` in any modern browser. That's the whole thing — the simulation, every diagram, and the math typesetting all live in that one file.
 
 ## Author
 
