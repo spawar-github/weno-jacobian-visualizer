@@ -516,7 +516,41 @@
       <span><i style="border-top-color:var(--good);border-top-style:dashed;"></i>CO₂ held on the solid</span>
     </div>
   </div>
-  <div class="navbtns"><button data-goto="4"><i class="ti ti-arrow-left"></i> Back</button><button data-goto="0"><i class="ti ti-refresh"></i>Start over</button></div>
+  <div class="navbtns"><button data-goto="4"><i class="ti ti-arrow-left"></i> Back</button><button class="primary" data-goto="6">Next: the whole loop, mapped <i class="ti ti-arrow-right"></i></button></div>
+</section>
+
+<!-- ===================== STAGE 7 ===================== -->
+<section class="stage" id="s6" role="tabpanel">
+  <div class="card">
+    <h2 class="st">Every piece, in the order the data actually flows</h2>
+    <p class="stsub">Step 7 · the map</p>
+    <div class="prose">
+      <p>You've now built every piece separately. Here is the loop they run inside, every single step, for the entire 8000-second run. Nothing here is new — it's steps 1 through 5, drawn as the cycle they actually form. Follow the arrows once and the phrase "WENO, the Jacobian and the implicit solver working in harmony" stops being a slogan and becomes a specific, checkable sequence of operations.</p>
+    </div>
+    <canvas id="c-map" data-h="600"></canvas>
+    <div class="legend" style="margin-top:2px;">
+      <span><i style="border-top-color:var(--accent);"></i>the state u — what steps 1–3 built</span>
+      <span><i style="border-top-color:var(--warm);"></i>WENO face reconstruction — step 2</span>
+      <span><i style="border-top-color:var(--hot);"></i>the banded Jacobian — step 5</span>
+      <span><i style="border-top-color:var(--good);"></i>a step Newton actually solved — step 4</span>
+      <span><i style="border-top-color:var(--violet);border-top-style:dashed;"></i>a step Newton couldn't solve — step 3's adaptivity</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 class="st">Reading the loop</h2>
+    <p class="stsub">Step 7 · continued</p>
+    <div class="prose">
+      <p>The <b>outer loop</b> — the big circuit on the outside — is time-stepping: it runs once per Δτ, roughly sixteen thousand times over the full run. The <b>inner loop</b> — the tight circuit around the Jacobian — is Newton, and it runs a handful of times <em>within</em> every single outer step, chasing one nonlinear system down to convergence before τ is allowed to advance at all.</p>
+      <p>Every box on this diagram is a card you already worked through. The state <b>u</b> flowing around the outside is step 1's cell averages, stacked into the vector step 3 introduced. Evaluating <b>F(u)</b> is where step 2's WENO formula runs once per face, N+1 times, using the boundary conditions at the two ends. The residual and the convergence check are step 4's Newton iteration, verbatim. And whenever that check fails, building <b>J</b> and solving <b>JΔu=−r</b> is step 5's banded, colour-probed matrix — the reason each trip around the inner loop stays cheap even though the outer loop takes it thousands of times.</p>
+      <p>The dashed exit at the bottom is the case step 4 was honest about: sometimes Newton doesn't converge in a reasonable number of iterations. When that happens the step is rejected outright, Δτ shrinks, and the outer loop tries again from the same <b>u<sup>n</sup></b> — nothing about the state is corrupted, only time refuses to advance until the nonlinear solve can keep up.</p>
+    </div>
+    <div class="key">
+      <span class="lbl">The one-sentence version</span>
+      WENO makes the flux at every face well-defined and non-oscillatory; that turns the PDE into a stiff ODE system that only an implicit method can step through efficiently; implicit means solving a nonlinear system every step with Newton; and Newton needs a Jacobian solved every iteration, which is only affordable because WENO's own compact stencil is what made that Jacobian banded in the first place. Each piece exists because of the one before it — this loop is that chain, running.
+    </div>
+  </div>
+  <div class="navbtns"><button data-goto="5"><i class="ti ti-arrow-left"></i> Back</button><button data-goto="0"><i class="ti ti-refresh"></i>Start over</button></div>
 </section>
 
 <section class="foot">
@@ -1453,6 +1487,130 @@ function drawColouring(){
 }
 
 // ===========================================================================
+//  STAGE 7 - the whole loop, mapped
+// ===========================================================================
+function drawMap(){
+  const c=document.getElementById('c-map'); const {g,W,H}=ctxOf(c);
+  const TX=cvar('--tx'),TX2=cvar('--tx2'),TX3=cvar('--tx3'),BD=cvar('--bd2'),
+        AC=cvar('--accent'),WM=cvar('--warm'),HT=cvar('--hot'),GD=cvar('--good'),
+        VI=cvar('--violet'),SF=cvar('--surface-3');
+  g.font='12px '+FS();
+
+  const margin=Math.max(58,W*0.10);
+  const bw=Math.max(200,Math.min(340,W-2*margin-36));
+  const cx=W/2, bx=cx-bw/2;
+  const outerX=Math.max(20,bx-40), stallX=Math.max(10,outerX-24);
+  const innerX=Math.min(W-16,bx+bw+40);
+
+  function rr(x,y,w,h,r){
+    g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);
+    g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();
+  }
+  function wrap(text,x,y,maxW,lh){
+    const words=text.split(' ');let line='',lines=[];
+    for(const w of words){const t=line?line+' '+w:w;
+      if(g.measureText(t).width>maxW&&line){lines.push(line);line=w;}else line=t;}
+    if(line)lines.push(line);
+    lines.forEach((l,k)=>g.fillText(l,x,y+k*lh));
+    return lines.length;
+  }
+  function box(y,h,title,sub,color,tag){
+    g.fillStyle=SF;g.strokeStyle=color;g.lineWidth=1.8;
+    rr(bx,y,bw,h,10);g.fill();g.stroke();
+    g.textAlign='center';g.fillStyle=TX;g.font='600 12.5px '+FS();
+    g.fillText(title,cx,y+(sub?20:h/2+4));
+    if(sub){g.font='10.5px '+FS();g.fillStyle=TX2;wrap(sub,cx,y+37,bw-22,13);}
+    if(tag){g.textAlign='left';g.font='700 9px '+FS();g.fillStyle=color;
+      g.fillText(tag,bx+9,y+13);g.textAlign='center';}
+    return y+h;
+  }
+  function diamond(y,h,title){
+    g.fillStyle=SF;g.strokeStyle=TX2;g.lineWidth=1.8;
+    g.beginPath();g.moveTo(cx,y);g.lineTo(bx+bw,y+h/2);g.lineTo(cx,y+h);g.lineTo(bx,y+h/2);g.closePath();
+    g.fill();g.stroke();
+    g.fillStyle=TX;g.font='600 12px '+FS();g.textAlign='center';
+    g.fillText(title,cx,y+h/2+4);
+    return y+h;
+  }
+  function vArrow(x,y1,y2,color,label,dashed){
+    g.strokeStyle=color;g.lineWidth=1.6;if(dashed)g.setLineDash([4,4]);
+    g.beginPath();g.moveTo(x,y1);g.lineTo(x,y2);g.stroke();g.setLineDash([]);
+    const dir=y2>y1?1:-1;
+    g.beginPath();g.moveTo(x,y2);g.lineTo(x-5,y2-6*dir);g.lineTo(x+5,y2-6*dir);g.closePath();
+    g.fillStyle=color;g.fill();
+    if(label){g.font='10px '+FS();g.fillStyle=TX3;g.textAlign='left';
+      g.fillText(label,x+9,(y1+y2)/2+3);g.textAlign='center';}
+  }
+  function elbow(pts,color,label,labelXY,dashed){
+    g.strokeStyle=color;g.lineWidth=1.6;if(dashed)g.setLineDash([4,4]);
+    g.beginPath();g.moveTo(pts[0][0],pts[0][1]);
+    for(let k=1;k<pts.length;k++)g.lineTo(pts[k][0],pts[k][1]);
+    g.stroke();g.setLineDash([]);
+    const last=pts[pts.length-1],prev=pts[pts.length-2];
+    const vx=last[0]-prev[0],vy=last[1]-prev[1],len=Math.hypot(vx,vy)||1;
+    const ux=vx/len,uy=vy/len;
+    g.beginPath();g.moveTo(last[0],last[1]);
+    g.lineTo(last[0]-7*ux-4*uy,last[1]-7*uy+4*ux);
+    g.lineTo(last[0]-7*ux+4*uy,last[1]-7*uy-4*ux);
+    g.closePath();g.fillStyle=color;g.fill();
+    if(label){g.font='10px '+FS();g.fillStyle=color;g.textAlign=labelXY[2]||'left';
+      g.fillText(label,labelXY[0],labelXY[1]);g.textAlign='center';}
+  }
+
+  let y=10;
+  const y1top=y;
+  y=box(y,42,'uⁿ, uⁿ⁻¹ known',null,AC,'');
+  const y1bot=y;
+  vArrow(cx,y,y+34,TX3,'extrapolate a guess for uⁿ⁺¹');y+=34;
+  const y2top=y;
+  y=box(y,66,'Evaluate F(u)','WENO reconstructs every face — N+1 of them — using the boundary conditions at both ends',WM,'STEP 1+2');
+  const y2bot=y;
+  vArrow(cx,y,y+32,TX3,'form the residual');y+=32;
+  y=box(y,46,'r(u) = u − uⁿ − c·Δτ·F(u)',null,TX2,'STEP 4');
+  vArrow(cx,y,y+30);y+=30;
+  const dTop=y;
+  y=diamond(y,66,'‖r‖ small enough?');
+  const dBot=y;
+
+  // NO branch: straight down into the Jacobian sub-loop
+  vArrow(cx,y,y+30,TX3,'no — Newton continues');y+=30;
+  const y4top=y;
+  y=box(y,56,'Build the banded Jacobian','J = I − cΔτ ∂F/∂u, 25 coloured probes',HT,'STEP 5');
+  vArrow(cx,y,y+26);y+=26;
+  y=box(y,44,'Solve JΔu = −r','banded LU factorisation',HT,'');
+  vArrow(cx,y,y+26);y+=26;
+  const y6top=y;
+  y=box(y,56,'u ← u + λΔu','line search: λ halved until ‖r‖ actually falls',TX2,'STEP 4');
+  const y6bot=y;
+
+  // inner loop: back up to "Evaluate F(u)"
+  elbow([[bx+bw,(y4top+y6bot)/2],[innerX,(y4top+y6bot)/2],[innerX,(y2top+y2bot)/2],[bx+bw,(y2top+y2bot)/2]],
+    GD,'re-evaluate F with the new guess',[innerX+8,(y4top+y6bot)/2-6,'left']);
+
+  // YES branch: small side box to the left of the diamond
+  const y7=dTop-4, y7h=56, y7x=Math.max(6,bx-Math.min(150,bw*0.42)-14), y7w=Math.min(150,bw*0.42);
+  g.fillStyle=SF;g.strokeStyle=GD;g.lineWidth=1.8;
+  rr(y7x,y7,y7w,y7h,10);g.fill();g.stroke();
+  g.fillStyle=TX;g.font='600 11.5px '+FS();g.textAlign='center';
+  g.fillText('Accept uⁿ⁺¹',y7x+y7w/2,y7+18);
+  g.font='10px '+FS();g.fillStyle=TX2;
+  wrap('grow Δτ if ≤3 its, shrink if ≥7',y7x+y7w/2,y7+34,y7w-16,12);
+  g.font='700 9px '+FS();g.fillStyle=GD;g.textAlign='left';
+  g.fillText('STEP 3',y7x+8,y7+13);
+  // arrow: diamond left vertex -> accept box (straight, same height as the vertex)
+  elbow([[bx,dTop+33],[y7x+y7w,dTop+33]],GD,'yes',[(bx+y7x+y7w)/2,dTop+33-10,'center']);
+  // outer loop: accept box back up to the top, routed left of the whole trunk
+  elbow([[y7x+y7w/2,y7],[y7x+y7w/2,y7-16],[outerX,y7-16],[outerX,y1top+21],[bx,y1top+21]],
+    AC,'τ ← τ + Δτ; next step',[outerX-6,(y1top+y7)/2,'right']);
+
+  // dashed stall exit: Newton gives up, reject the step, shrink Δτ, retry - lands lower on box 1
+  elbow([[bx,(y6top+y6bot)/2],[stallX,(y6top+y6bot)/2],[stallX,y1bot-8],[bx,y1bot-8]],
+    VI,'Newton stalls: reject step, shrink Δτ, retry from uⁿ',[stallX-6,(y6top+y1bot)/2,'right'],true);
+
+  g.textAlign='left';
+}
+
+// ===========================================================================
 //  STAGE 6 - the real run
 // ===========================================================================
 let st=null,stPrev=null,t=0,dt=0.002,dtPrev=0.002,nstep=0,nfail=0,lastIt=0,
@@ -1604,7 +1762,8 @@ const STAGES=[
   ['Step 3','Why not step forward'],
   ['Step 4','Solving the step'],
   ['Step 5','Why J is banded'],
-  ['Step 6','All of it, running']
+  ['Step 6','All of it, running'],
+  ['Step 7','The map']
 ];
 let cur=0;
 function buildNav(){
@@ -1634,6 +1793,7 @@ function drawStage(i){
   else if(i===3){drawNewton();}
   else if(i===4){drawJacTeach();drawCellStrip();updateJacMsg();drawColouring();}
   else if(i===5){renderSim();}
+  else if(i===6){drawMap();}
 }
 document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>goto(+b.dataset.goto));
 
