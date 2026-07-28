@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WENO · Jacobian · implicit ODE solvers — PSA full-physics explainer</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+  :root{
+    --color-background-primary:#ffffff;--color-background-secondary:#f6f5f1;--color-background-tertiary:#efede6;
+    --color-background-info:#E6F1FB;
+    --color-text-primary:#2c2c2a;--color-text-secondary:#5f5e5a;--color-text-tertiary:#888780;--color-text-info:#0C447C;
+    --color-border-tertiary:rgba(60,60,55,0.15);--color-border-secondary:rgba(60,60,55,0.30);--color-border-primary:rgba(60,60,55,0.40);
+    --color-border-info:#378ADD;
+    --border-radius-md:8px;--border-radius-lg:12px;--border-radius-xl:16px;
+    --font-sans:'Anthropic Sans',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    --ua-green:#007C41;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --color-background-primary:#1f1e1c;--color-background-secondary:#262522;--color-background-tertiary:#191817;
+      --color-background-info:#0C447C;
+      --color-text-primary:#ECEBE6;--color-text-secondary:#B4B2A9;--color-text-tertiary:#888780;--color-text-info:#B5D4F4;
+      --color-border-tertiary:rgba(236,235,230,0.15);--color-border-secondary:rgba(236,235,230,0.30);--color-border-primary:rgba(236,235,230,0.40);
+      --color-border-info:#378ADD;--ua-green:#3DAE6B;
+    }
+  }
+  html,body{margin:0;background:var(--color-background-tertiary);color:var(--color-text-primary);font-family:var(--font-sans);}
+  .wrap{max-width:1040px;margin:0 auto;padding:18px 20px 60px;}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0;}
+  button{font-family:inherit;font-size:14px;color:var(--color-text-primary);background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:7px 12px;cursor:pointer;}
+  button:hover{background:var(--color-background-secondary);}
+  button:active{transform:scale(0.98);}
+  select{font-family:inherit;font-size:13px;color:var(--color-text-primary);background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:4px 8px;}
+  input[type=range]{accent-color:#378ADD;cursor:pointer;}
+  h1{font-size:22px;font-weight:500;margin:0 0 4px;}
+  .lede{font-size:14px;color:var(--color-text-secondary);margin:0 0 18px;line-height:1.6;}
+  .hdr{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:0.5px solid var(--color-border-tertiary);padding-bottom:12px;margin-bottom:16px;}
+  .hdr .who{font-size:13px;color:var(--color-text-secondary);}
+  .hdr .who b{color:var(--color-text-primary);font-weight:500;}
+  .panel{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:12px 14px;}
+  .ptitle{font-size:14px;font-weight:500;margin:0 0 2px;}
+  .psub{font-size:12px;color:var(--color-text-secondary);margin:0 0 8px;line-height:1.45;}
+  .note{font-size:12.5px;color:var(--color-text-secondary);border-left:2px solid var(--color-border-secondary);padding:2px 0 2px 12px;margin:10px 0;line-height:1.5;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:780px){.grid2{grid-template-columns:1fr;}}
+  canvas{display:block;width:100%;}
+  .math{margin-top:42px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px;}
+  .math h2{font-size:18px;font-weight:500;margin:30px 0 8px;}
+  .math h3{font-size:15px;font-weight:500;margin:20px 0 6px;}
+  .math p{font-size:14.5px;line-height:1.7;margin:8px 0;}
+  .math code{font-family:var(--font-mono);font-size:13px;background:var(--color-background-secondary);padding:1px 5px;border-radius:4px;}
+  .math .eqwrap{overflow-x:auto;padding:6px 0;}
+  .math table{border-collapse:collapse;width:100%;font-size:13.5px;margin:10px 0;}
+  .math th,.math td{border:0.5px solid var(--color-border-tertiary);padding:6px 9px;text-align:left;vertical-align:top;}
+  .math th{font-weight:500;background:var(--color-background-secondary);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hdr">
+  <div class="who"><b>Sunny Pawar</b><br>Full-physics PSA solver explainer</div>
+  <svg width="230" height="46" viewBox="0 0 230 46" xmlns="http://www.w3.org/2000/svg" aria-label="University of Alberta">
+    <g>
+      <path d="M8 3 h30 v22 c0 9 -7 14 -15 17 c-8 -3 -15 -8 -15 -17 z" fill="var(--ua-green)"/>
+      <rect x="15" y="9" width="16" height="2.4" rx="1" fill="#fff"/>
+      <path d="M14 16 q5 -3 9 0 q4 -3 9 0 v3 q-5 -3 -9 0 q-4 -3 -9 0 z" fill="#fff"/>
+      <path d="M14 23 q5 -3 9 0 q4 -3 9 0 v3 q-5 -3 -9 0 q-4 -3 -9 0 z" fill="#fff"/>
+    </g>
+    <text x="50" y="20" fill="var(--ua-green)" style="font:500 15px var(--font-sans);letter-spacing:.5px;">UNIVERSITY</text>
+    <text x="50" y="38" fill="var(--ua-green)" style="font:500 15px var(--font-sans);letter-spacing:.5px;">OF ALBERTA</text>
+  </svg>
+</div>
+
+<h1>How WENO, the Jacobian and the implicit ODE solver work in harmony</h1>
+<p class="lede">A real method-of-lines simulation of the paper's full coupled PSA model — component &amp; total mass balances, two solid loadings, bed &amp; wall energy, Darcy velocity (6 fields per cell) — integrated to dimensionless time τ = 5. Three integrators run on the same equations (explicit Euler, <code>ode23tb</code>, <code>ode15s</code>) so you can watch which survive stiffness. The Newton step uses a banded solve over the WENO-structured Jacobian.</p>
+
+<h2 class="sr-only">Interactive full-physics PSA explainer with controls for time step, adsorption rate, and number of finite-volume cells, comparing explicit and implicit ODE solvers, with column profiles, breakthrough curves, the banded Jacobian, and WENO reconstruction.</h2>
+
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px;">
+  <button id="play" style="display:flex;align-items:center;gap:6px;"><i class="ti ti-player-play" aria-hidden="true"></i><span>Play</span></button>
+  <button id="step" style="display:flex;align-items:center;gap:6px;"><i class="ti ti-arrow-right" aria-hidden="true"></i>One step</button>
+  <button id="reset" style="display:flex;align-items:center;gap:6px;"><i class="ti ti-refresh" aria-hidden="true"></i>Reset</button>
+  <label style="font-size:13px;color:var(--color-text-secondary);margin-left:6px;">Δt</label>
+  <input type="range" id="dt" min="0.01" max="0.12" step="0.01" value="0.05" style="width:110px;">
+  <span id="dtout" style="font-size:13px;font-weight:500;min-width:30px;">0.05</span>
+  <label style="font-size:13px;color:var(--color-text-secondary);margin-left:6px;">Stiffness α</label>
+  <input type="range" id="stiff" min="1" max="250" step="1" value="20" style="width:120px;">
+  <span id="stiffout" style="font-size:13px;font-weight:500;min-width:28px;">20</span>
+  <label style="font-size:13px;color:var(--color-text-secondary);margin-left:6px;">Cells N</label>
+  <input type="range" id="ncell" min="10" max="150" step="2" value="30" style="width:120px;">
+  <span id="ncellout" style="font-size:13px;font-weight:500;min-width:28px;">30</span>
+</div>
+
+<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--color-text-secondary);margin-bottom:6px;">
+  <span>τ: <span id="tval" style="color:var(--color-text-primary);font-weight:500;">0.00</span></span>
+  <span>front Z: <span id="frontval" style="color:var(--color-text-primary);font-weight:500;">0.00</span></span>
+  <span>state size: <span id="msize" style="color:var(--color-text-primary);font-weight:500;">180</span></span>
+</div>
+<div id="stiffinfo" style="font-size:12.5px;color:var(--color-text-secondary);margin:0 0 6px;line-height:1.5;"></div>
+<p class="note" style="margin-top:0;">
+  <b>α</b> is the dimensionless LDF mass-transfer rate <code>k·L/v₀</code>. <b>α = 1</b> means the solid needs ~one full column residence time to approach equilibrium with the gas (slow uptake); large α means the solid equilibrates almost instantly — the stiff limit that the implicit solver exists to handle.
+  &nbsp;<b>|λ|<sub>max</sub></b> is the magnitude of the fastest (most negative) eigenvalue of the ODE system — its quickest-decaying mode. It sets the explicit stability limit Δt &lt; 2/|λ|; here it is dominated by the pressure/velocity coupling plus α.
+</p>
+
+<div class="grid2" style="margin-bottom:16px;">
+  <div class="panel">
+    <p class="ptitle">Column profiles (snapshot vs position)</p>
+    <p class="psub">Gas CO₂ fraction from each solver (left axis) and bed temperature (right axis), along the column at the current τ.</p>
+    <canvas id="profile" width="720" height="380"></canvas>
+  </div>
+  <div class="panel">
+    <p class="ptitle">Breakthrough at the column exit (vs time)</p>
+    <p class="psub">History of the outlet velocity, temperature and CO₂ mole fraction as the fronts elute — the classic breakthrough curves.</p>
+    <canvas id="break" width="720" height="380"></canvas>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px;">
+  <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 14px;">
+    <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:4px;"><span style="color:#185FA5;">●</span> ode23tb · BDF1</div>
+    <div style="font-size:24px;font-weight:500;" id="l1tb">–</div>
+    <div style="font-size:11.5px;color:var(--color-text-tertiary);">L1 error vs reference</div>
+  </div>
+  <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 14px;">
+    <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:4px;"><span style="color:#534AB7;">●</span> ode15s · BDF2</div>
+    <div style="font-size:24px;font-weight:500;" id="l1bdf">–</div>
+    <div style="font-size:11.5px;color:var(--color-text-tertiary);">L1 error vs reference</div>
+  </div>
+  <div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 14px;">
+    <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:4px;"><span style="color:#D85A30;">●</span> explicit · Euler</div>
+    <div style="font-size:24px;font-weight:500;" id="l1exp">–</div>
+    <div style="font-size:11.5px;color:var(--color-text-tertiary);">L1 error vs reference</div>
+  </div>
+</div>
+<p class="note" style="margin-top:0;">
+  <b>L1 error reference:</b> the same six PDEs integrated by backward Euler with a fine sub-step (Δt/2 here) acts as the “ground truth”. The error is the relative L1 norm over the gas profile, <code>Σ|y−y_ref| / Σ|y_ref|</code> — the same norm the paper uses (eq 55). BDF2 (<code>ode15s</code>) is second-order so its error is normally below BDF1 (<code>ode23tb</code>); the explicit solver’s error runs away once Δt exceeds its stability limit.
+</p>
+
+<div class="grid2">
+  <div class="panel">
+    <p class="ptitle">Banded Jacobian  J = I − Δt ∂F/∂u</p>
+    <p class="psub">Top-left cell blocks. Each cell couples to its neighbours (and 2 cells upstream via WENO), so J is banded — darker = larger entry. Grid lines separate 6×6 per-cell blocks.</p>
+    <canvas id="jac" width="460" height="460"></canvas>
+  </div>
+  <div class="panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <p class="ptitle" style="margin:0;">WENO wall reconstruction at face j+½</p>
+      <select id="wfield" aria-label="field"><option value="0">CO₂ y</option><option value="3">temperature T</option><option value="5">pressure P</option></select>
+    </div>
+    <p class="psub">Pick a field and a cell. The face value is a smoothness-weighted blend of two stencils; near a front the steep-side weight collapses to kill oscillations.</p>
+    <div style="display:flex;align-items:center;gap:8px;margin:0 0 8px;">
+      <label style="font-size:12px;color:var(--color-text-secondary);">cell j</label>
+      <input type="range" id="cell" min="2" max="28" step="1" value="10" style="flex:1;">
+      <span id="cellout" style="font-size:12px;font-weight:500;min-width:18px;">10</span>
+    </div>
+    <canvas id="weno" width="700" height="300"></canvas>
+    <p id="wenotxt" style="font-size:12px;color:var(--color-text-secondary);margin:8px 0 0;line-height:1.5;"></p>
+  </div>
+</div>
+
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:1.25rem;">
+  <button onclick="sendPrompt('Walk me through exactly what happens inside one implicit step of the full PSA model, in the order the data flows.')" style="display:flex;align-items:center;gap:6px;">Explain one step ↗</button>
+  <button onclick="sendPrompt('Why is the PSA Jacobian banded but not block-tridiagonal, and how does a banded solver exploit that?')" style="display:flex;align-items:center;gap:6px;">Why banded? ↗</button>
+</div>
+
+<section class="math">
+<h2>Why this approach works the way it does</h2>
+<p>The physics forces every choice. During adsorption a <b>sharp concentration and temperature front</b> sweeps the column, and the nonlinear CO₂ isotherm makes it self-sharpen. A naïve high-order scheme rings with oscillations around such a front (overshoots that drive a mole fraction out of [0,1] and break the isotherm); a low-order upwind scheme is stable but smears the front. <b>WENO</b> resolves this: smooth regions blend two stencils for high order, but at a steep front the \(1/(\Delta)^4\) weighting starves the stencil straddling the jump, degrading gracefully — sharp fronts and no oscillations, with no tuning.</p>
+<p>The <b>finite-volume</b> framing makes those wall values conservative: adjacent cells share identical face fluxes, so mass/energy are conserved by construction. And the resulting ODE system is <b>stiff</b> — the pressure/velocity coupling and fast adsorption create very fast modes — so an explicit integrator is forced into tiny steps for stability, while an <b>implicit</b> solver takes large stable steps at the price of a Newton solve each step, which needs the Jacobian. WENO's compact stencil makes that Jacobian <b>banded</b>, and a banded solve makes the implicit step cheap enough to run hundreds of cycles. Remove any one piece and the simulation is inaccurate, unstable, or too slow.</p>
+
+<h2>Mathematical details</h2>
+<p>Six coupled dimensionless PDEs per cell are solved by the method of lines (groups from the paper's Supporting Information):</p>
+<p>Component mass balance (eq 1):</p>
+<div class="eqwrap">$$\frac{\partial y_i}{\partial \tau}=\frac{1}{Pe}\frac{T}{P}\frac{\partial}{\partial Z}\!\left(\frac{P}{T}\frac{\partial y_i}{\partial Z}\right)-\frac{T}{P}\frac{\partial}{\partial Z}\!\left(\frac{y_i P}{T}v\right)-\Psi\frac{T}{P}\frac{\partial x_i}{\partial\tau}-\frac{y_i}{P}\frac{\partial P}{\partial\tau}+\frac{y_i}{T}\frac{\partial T}{\partial\tau}$$</div>
+<p>Total mass balance → pressure (eq 2), solid LDF (eq 3), bed energy (eq 4), wall energy (eq 5), and Darcy velocity (eq 7):</p>
+<div class="eqwrap">$$\frac{\partial P}{\partial\tau}=-T\frac{\partial}{\partial Z}\!\left(\frac{P}{T}v\right)-\Psi T\!\sum_i\frac{\partial x_i}{\partial\tau},\qquad \frac{\partial x_i}{\partial\tau}=\alpha_i(x_i^*-x_i),\qquad v=-\,\frac{\kappa}{\mu}\frac{P_0}{v_0 L}\frac{\partial P}{\partial Z}$$</div>
+<p>with the dual-site Langmuir isotherm (eq 37) and Arrhenius, temperature-dependent affinities providing two-way thermal coupling.</p>
+
+<h3>WENO wall reconstruction (eqs 30–31)</h3>
+<div class="eqwrap">$$\alpha_{0}=\frac{2/3}{(f_{j+1}-f_j+\delta)^4},\;\alpha_{1}=\frac{1/3}{(f_j-f_{j-1}+\delta)^4},\;w_k=\frac{\alpha_k}{\alpha_0+\alpha_1},\quad f_{j+1/2}=w_0\tfrac12(f_j+f_{j+1})+w_1\!\left(\tfrac32 f_j-\tfrac12 f_{j-1}\right)$$</div>
+<p>Because the face at \(j+\tfrac12\) reaches back to \(f_{j-1}\), each cell residual depends on cells \(j-2\) to \(j+1\): the Jacobian is banded (lower half-bandwidth 12, upper 11 for 6 fields), not strictly tridiagonal.</p>
+
+<h3>The implicit step</h3>
+<p>With \(\dot{\mathbf u}=\mathbf F(\mathbf u)\), an implicit step solves \(\mathbf r=\mathbf u^{n+1}-\mathbf u^{n}-\Delta t\,\mathbf F(\mathbf u^{n+1})=\mathbf 0\) by Newton:</p>
+<div class="eqwrap">$$\mathbf J=\mathbf I-\Delta t\,\frac{\partial\mathbf F}{\partial\mathbf u},\qquad \mathbf J\,\Delta\mathbf u=-\mathbf r.$$</div>
+<p>BDF2 (the <code>ode15s</code> core) uses \(y^{n+1}-\tfrac43y^n+\tfrac13y^{n-1}=\tfrac23\Delta t\,\mathbf F(y^{n+1})\), giving \(\mathbf J=\mathbf I-\tfrac23\Delta t\,\partial\mathbf F/\partial\mathbf u\). The banded structure lets a banded LU solve \(\mathbf J\Delta\mathbf u=-\mathbf r\) in \(O(M\,b^2)\) instead of \(O(M^3)\) — the same sparsity a real solver exploits via <code>JPattern</code>.</p>
+<p class="note">Scope: the dimensionless groups are illustrative (not the exact zeolite-13X set), and these are fixed-step integrators, so the comparison isolates stability, order and Jacobian structure rather than the adaptive step-size control real <code>ode15s</code>/<code>ode23tb</code> add.</p>
+</section>
+
+</div>
+
+<script>
+function sendPrompt(t){ alert("This button asks Claude:\n\n"+t+"\n\n(Active only inside the Claude chat.)"); }
+function openLink(u){ window.open(u,'_blank'); }
+(function(){
+  // ---------- model parameters ----------
+  let N=30, NF=6, M2, dz;
+  const KL=12, KU=12;                                   // Jacobian half-bandwidths
+  const feed=0.15, Tamb=1.0, yMaxDisp=0.20, TAU_MAX=5;
+  const Pe=300, Kperm=60.0, vfeed=1.2; let PSI=1.0;
+  const kappaT=0.02, Hads=0.40, hwall=0.5, hamb=0.3, Pcomp=0.05, kappaW=0.05;
+  const B1=6.0, B2=0.5, QS1=1.0, QS2=0.7, E1=2.0, E2=0.5, aRatio=1.5;
+  let alpha=20;
+  let y, yExp, yB, yBprev, yRef, hist, t=0, nit=0, nitB=0, lastJ=null, expDiverged=false, stage=-1;
+
+  const cs=getComputedStyle(document.documentElement);
+  const cvv=(n,f)=>{const x=cs.getPropertyValue(n).trim();return x||f;};
+  const C_TXT=cvv('--color-text-secondary','#888780'), C_TXP=cvv('--color-text-primary','#2c2c2a');
+  const BLUE='#378ADD',BLUE_D='#185FA5',TEAL='#1D9E75',TEAL_D='#0F6E56',CORAL='#D85A30',PURPLE='#7F77DD',PURPLE_D='#534AB7',AMBER='#EF9F27',AMBER_D='#854F0B',RED='#E24B4A',GRID='#8887804d';
+
+  function zeroState(){const a=new Array(M2).fill(0);for(let i=0;i<N;i++){a[6*i+3]=Tamb;a[6*i+4]=Tamb;a[6*i+5]=1.0;}return a;}
+  function initAll(){
+    M2=NF*N; dz=1/N;
+    y=zeroState(); yExp=zeroState(); yB=zeroState(); yBprev=null; yRef=zeroState();
+    hist=[]; t=0; nit=0; nitB=0; expDiverged=false; lastJ=jac(y,0.05);
+    document.getElementById('msize').textContent=M2;
+  }
+  const gF=(v,off)=>{const a=[];for(let i=0;i<N;i++)a.push(v[6*i+off]);return a;};
+  const getU=()=>gF(y,0),getUexp=()=>gF(yExp,0),getUbdf=()=>gF(yB,0),getUref=()=>gF(yRef,0),getT=()=>gF(y,3);
+
+  function clampF(val,k){const f=k%6;
+    if(!isFinite(val))return (f===5)?1.0:((f===3||f===4)?Tamb:0);
+    if(f===5)return Math.max(0.1,Math.min(1.6,val));
+    if(f===3||f===4)return Math.max(0.5,Math.min(2.0,val));
+    return Math.max(0,Math.min(1,val));}
+
+  function face(jm1,jc,jp){
+    const eps=1e-10;
+    const a0=(2/3)/Math.pow(jp-jc+eps,4), a1=(1/3)/Math.pow(jc-jm1+eps,4);
+    const s=a0+a1, w0=a0/s, w1=a1/s;
+    return {val:w0*0.5*(jc+jp)+w1*(1.5*jc-0.5*jm1), w0:w0, w1:w1};
+  }
+
+  // ---------- full 6-field RHS ----------
+  function F(s){
+    const r=new Array(M2).fill(0);
+    const Y=i=>s[6*i],X1=i=>s[6*i+1],X2=i=>s[6*i+2],T=i=>s[6*i+3],TW=i=>s[6*i+4],P=i=>s[6*i+5];
+    const Ts=i=>Math.min(2.0,Math.max(0.4,T(i))), Ps=i=>Math.min(1.6,Math.max(0.05,P(i)));
+    const n=i=>Ps(i)/Ts(i);
+    const vf=new Array(N+1); vf[0]=vfeed;
+    for(let k=1;k<N;k++) vf[k]=-Kperm*(P(k)-P(k-1))/dz;
+    vf[N]=-Kperm*2*(1.0-P(N-1))/dz;
+    const dx1=new Array(N),dx2=new Array(N);
+    for(let i=0;i<N;i++){
+      const Ti=Ts(i),yi=Math.min(1,Math.max(0,Y(i))),Pi=Ps(i);
+      const c1=Pi*yi/Ti,c2=Pi*(1-yi)/Ti;
+      const b1=B1*Math.exp(E1*(1/Ti-1)),b2=B2*Math.exp(E2*(1/Ti-1));
+      const den=1+b1*c1+b2*c2;
+      dx1[i]=alpha*(QS1*b1*c1/den-X1(i));
+      dx2[i]=alpha*aRatio*(QS2*b2*c2/den-X2(i));
+    }
+    const yf=new Array(N+1),nf=new Array(N+1); yf[0]=feed; nf[0]=n(0);
+    for(let k=1;k<N;k++){
+      const jm1=(k-1<1)?feed:Y(k-2);
+      yf[k]=face(jm1,Y(k-1),Y(k)).val;
+      nf[k]=(vf[k]>=0)?n(k-1):n(k);
+    }
+    yf[N]=Y(N-1); nf[N]=n(N-1);
+    for(let i=0;i<N;i++){
+      const dP=-T(i)*(nf[i+1]*vf[i+1]-nf[i]*vf[i])/dz - PSI*T(i)*(dx1[i]+dx2[i]); r[6*i+5]=dP;
+      const Tm=(i===0)?Tamb:T(i-1),Tp=(i===N-1)?T(i):T(i+1);
+      const condT=kappaT*(Tp-2*T(i)+Tm)/(dz*dz);
+      const TfIn=vf[i]*((vf[i]>=0)?((i===0)?Tamb:T(i-1)):T(i));
+      const TfOut=vf[i+1]*((vf[i+1]>=0)?T(i):((i===N-1)?T(i):T(i+1)));
+      const dT=condT-(TfOut-TfIn)/dz+Hads*(dx1[i]+dx2[i])-hwall*(T(i)-TW(i))-Pcomp*dP; r[6*i+3]=dT;
+      const Twm=(i===0)?Tamb:TW(i-1),Twp=(i===N-1)?TW(i):TW(i+1);
+      r[6*i+4]=kappaW*(Twp-2*TW(i)+Twm)/(dz*dz)+hwall*(T(i)-TW(i))-hamb*(TW(i)-Tamb);
+      r[6*i+1]=dx1[i]; r[6*i+2]=dx2[i];
+      const ym=(i===0)?feed:Y(i-1),yp=(i===N-1)?Y(i):Y(i+1);
+      const dispY=(1/Pe)*n(i)*(yp-2*Y(i)+ym)/(dz*dz);
+      const convY=-(nf[i+1]*vf[i+1]*yf[i+1]-nf[i]*vf[i]*yf[i])/dz;
+      const dn=dP/Ts(i)-Ps(i)/(Ts(i)*Ts(i))*dT;
+      r[6*i]=(dispY+convY-PSI*dx1[i]-Y(i)*dn)/n(i);
+    }
+    return r;
+  }
+
+  // dense build of J = I - coef*dF/du
+  function jac(s,coef){
+    const f0=F(s), J=[];
+    for(let i=0;i<M2;i++)J.push(new Array(M2).fill(0));
+    const h=1e-6;
+    for(let c=0;c<M2;c++){
+      const sp=s.slice(); sp[c]+=h; const f1=F(sp);
+      for(let row=0;row<M2;row++) J[row][c]=(row===c?1:0)-coef*(f1[row]-f0[row])/h;
+    }
+    return J;
+  }
+  // banded LU solve (no pivoting; matrix is well-conditioned & banded with half-bw KL,KU)
+  function solve(A,b){
+    const n=b.length, M=A.map(r=>r.slice()), x=b.slice();
+    for(let p=0;p<n;p++){
+      const piv=M[p][p]||1e-12, rmax=Math.min(n,p+KL+1), cmax=Math.min(n,p+KU+1);
+      for(let r=p+1;r<rmax;r++){
+        const f=M[r][p]/piv; if(f===0)continue;
+        for(let c=p;c<cmax;c++) M[r][c]-=f*M[p][c];
+        x[r]-=f*x[p];
+      }
+    }
+    for(let p=n-1;p>=0;p--){
+      let s=x[p], cmax=Math.min(n,p+KU+1);
+      for(let c=p+1;c<cmax;c++) s-=M[p][c]*x[c];
+      x[p]=s/(M[p][p]||1e-12);
+    }
+    return x;
+  }
+
+  function newton(prevTerms,coef){ // solves s - prevTerms - coef*F(s)=0 ; returns {s,iters}
+    let s=y.slice(), iters=0;
+    for(let k=0;k<6;k++){
+      const Fs=F(s), r=s.map((si,i)=>si-prevTerms[i]-coef*Fs[i]);
+      const J=jac(s,coef); lastJ=J;
+      const d=solve(J,r.map(x=>-x));
+      for(let i=0;i<M2;i++)s[i]+=d[i]; iters++;
+      let nrm=0; for(let i=0;i<M2;i++)nrm+=d[i]*d[i];
+      if(Math.sqrt(nrm)<1e-9)break;
+    }
+    return {s:s,iters:iters};
+  }
+  function stepOnce(dt){
+    const yprev=y.slice();
+    const res=newton(yprev,dt);
+    for(let i=0;i<M2;i++)y[i]=clampF(res.s[i],i);
+    t+=dt; nit=res.iters;
+  }
+  function explicitStep(dt){
+    if(expDiverged)return;
+    const f=F(yExp);
+    for(let i=0;i<M2;i++)yExp[i]+=dt*f[i];
+    let mx=0; for(let i=0;i<M2;i++)mx=Math.max(mx,Math.abs(yExp[i]));
+    if(!isFinite(mx)||mx>6)expDiverged=true;
+  }
+  function bdfStep(dt){
+    const yn=yB.slice();
+    if(yBprev===null){
+      let s=yn.slice(),it=0;
+      for(let k=0;k<6;k++){
+        const Fs=F(s), r=s.map((si,i)=>si-yn[i]-dt*Fs[i]);
+        const d=solve(jac(s,dt),r.map(x=>-x));
+        for(let i=0;i<M2;i++)s[i]+=d[i]; it++;
+        let nrm=0;for(let i=0;i<M2;i++)nrm+=d[i]*d[i]; if(Math.sqrt(nrm)<1e-9)break;
+      }
+      for(let i=0;i<M2;i++)yB[i]=clampF(s[i],i); yBprev=yn; nitB=it; return;
+    }
+    const ynm1=yBprev, c=(2/3)*dt; let s=yn.slice(),it=0;
+    for(let k=0;k<6;k++){
+      const Fs=F(s), r=s.map((si,i)=>si-(4/3)*yn[i]+(1/3)*ynm1[i]-c*Fs[i]);
+      const d=solve(jac(s,c),r.map(x=>-x));
+      for(let i=0;i<M2;i++)s[i]+=d[i]; it++;
+      let nrm=0;for(let i=0;i<M2;i++)nrm+=d[i]*d[i]; if(Math.sqrt(nrm)<1e-9)break;
+    }
+    for(let i=0;i<M2;i++)yB[i]=clampF(s[i],i); yBprev=yn; nitB=it;
+  }
+  function beSolve(state,dt){
+    const yn=state; let s=state.slice();
+    for(let k=0;k<5;k++){
+      const Fs=F(s), r=s.map((si,i)=>si-yn[i]-dt*Fs[i]);
+      const d=solve(jac(s,dt),r.map(x=>-x));
+      for(let i=0;i<M2;i++)s[i]+=d[i];
+      let nrm=0;for(let i=0;i<M2;i++)nrm+=d[i]*d[i]; if(Math.sqrt(nrm)<1e-10)break;
+    }
+    for(let i=0;i<M2;i++)s[i]=clampF(s[i],i);
+    return s;
+  }
+  function refStep(dt){ const m=2,dd=dt/m; for(let k=0;k<m;k++)yRef=beSolve(yRef,dd); }
+  function l1(arr){ const ur=getUref(); let num=0,den=0;
+    for(let i=0;i<N;i++){let v=arr[i];if(!isFinite(v))return Infinity;num+=Math.abs(v-ur[i]);den+=Math.abs(ur[i]);}
+    return den>1e-4?num/den:null; }
+  function stiffInfo(dt){ const lam=alpha*(1+PSI)+Kperm/(dz*dz)+vfeed/dz; return {lam:lam,dtExp:2/lam,ratio:dt/(2/lam)}; }
+  function recordHist(){
+    const P=i=>y[6*i+5];
+    const vexit=(-Kperm*2*(1.0-P(N-1))/dz)/vfeed;
+    hist.push([t, vexit, y[6*(N-1)+3], y[6*(N-1)]]);
+  }
+  function bothSteps(dt){ refStep(dt); explicitStep(dt); stepOnce(dt); bdfStep(dt); recordHist(); }
+
+  // ---------- canvases ----------
+  function axisFont(){return '20px sans-serif';}
+  const pc=document.getElementById('profile'),pg=pc.getContext('2d');
+  function drawProfile(){
+    const W=pc.width,H=pc.height; pg.clearRect(0,0,W,H);
+    const padL=66,padR=64,padT=44,padB=46,w=W-padL-padR,h=H-padT-padB;
+    const X=i=>padL+(i+0.5)/N*w, Yv=v=>padT+h-h*Math.max(0,Math.min(1,v/yMaxDisp));
+    pg.font=axisFont();
+    // grid + left ticks
+    pg.strokeStyle=GRID;pg.lineWidth=1;pg.fillStyle=C_TXT;pg.textAlign='right';
+    for(let g=0;g<=4;g++){const yy=padT+h*g/4;pg.beginPath();pg.moveTo(padL,yy);pg.lineTo(padL+w,yy);pg.stroke();
+      pg.fillText((yMaxDisp*(1-g/4)).toFixed(2),padL-8,yy+7);}
+    // x ticks
+    pg.textAlign='center';
+    for(let g=0;g<=4;g++){const xx=padL+w*g/4;pg.fillText((g/4).toFixed(2),xx,padT+h+24);}
+    // frame
+    pg.strokeStyle=C_TXT;pg.globalAlpha=0.4;pg.lineWidth=1.2;
+    pg.beginPath();pg.moveTo(padL,padT);pg.lineTo(padL,padT+h);pg.lineTo(padL+w,padT+h);pg.stroke();pg.globalAlpha=1;
+    pg.fillStyle=C_TXT;pg.fillText('position  Z [-]',padL+w/2,H-8);
+    pg.save();pg.translate(20,padT+h/2);pg.rotate(-Math.PI/2);pg.fillText('y_CO₂ [-]',0,0);pg.restore();
+    // selected cell marker
+    const cj=Math.min(N-1,+document.getElementById('cell').value-1), xm=X(cj);
+    pg.strokeStyle=C_TXT;pg.globalAlpha=0.22;pg.lineWidth=1.4;pg.setLineDash([5,5]);
+    pg.beginPath();pg.moveTo(xm,padT);pg.lineTo(xm,padT+h);pg.stroke();pg.setLineDash([]);pg.globalAlpha=1;
+    const uu=getU();
+    pg.fillStyle=BLUE;pg.globalAlpha=0.10;pg.beginPath();pg.moveTo(X(0),padT+h);
+    for(let i=0;i<N;i++)pg.lineTo(X(i),Yv(uu[i]));pg.lineTo(X(N-1),padT+h);pg.closePath();pg.fill();pg.globalAlpha=1;
+    const plot=(arr,col,lw,dash)=>{pg.strokeStyle=col;pg.lineWidth=lw;pg.setLineDash(dash||[]);pg.lineJoin='round';pg.beginPath();
+      for(let i=0;i<N;i++){let v=arr[i]/yMaxDisp;if(!isFinite(v))v=1.3;const yy=padT+h-h*Math.max(-0.25,Math.min(1.25,v));i?pg.lineTo(X(i),yy):pg.moveTo(X(i),yy);}pg.stroke();pg.setLineDash([]);};
+    plot(getUexp(),CORAL,1.8); plot(getUbdf(),PURPLE,2,[2,3]); plot(uu,BLUE_D,2.6);
+    // temperature right axis
+    const Tlo=0.98,Thi=1.35,yT=v=>padT+h-h*Math.max(0,Math.min(1,(v-Tlo)/(Thi-Tlo)));
+    const tt=getT();pg.strokeStyle=AMBER;pg.lineWidth=2.2;pg.beginPath();
+    for(let i=0;i<N;i++){const yy=yT(tt[i]);i?pg.lineTo(X(i),yy):pg.moveTo(X(i),yy);}pg.stroke();
+    pg.fillStyle=AMBER_D;pg.textAlign='left';
+    for(let g=0;g<=4;g++){const tv=Tlo+(Thi-Tlo)*g/4;pg.fillText(tv.toFixed(2),padL+w+8,yT(tv)+6);}
+    pg.save();pg.translate(W-8,padT+h/2);pg.rotate(Math.PI/2);pg.textAlign='center';pg.fillText('T / T₀ [-]',0,0);pg.restore();
+    pg.fillStyle=BLUE_D;pg.beginPath();pg.arc(xm,Yv(uu[cj]),4,0,2*Math.PI);pg.fill();
+    // legend
+    pg.textAlign='left';const leg=[[BLUE_D,'ode23tb',false],[PURPLE,'ode15s',true],[CORAL,'explicit',false],[AMBER,'T (right)',false]];
+    let lx=padL;leg.forEach(L=>{pg.strokeStyle=L[0];pg.lineWidth=3;pg.setLineDash(L[2]?[5,5]:[]);
+      pg.beginPath();pg.moveTo(lx,padT-20);pg.lineTo(lx+24,padT-20);pg.stroke();pg.setLineDash([]);
+      pg.fillStyle=C_TXT;pg.fillText(L[1],lx+30,padT-14);lx+=30+pg.measureText(L[1]).width+26;});
+    if(expDiverged){pg.fillStyle=CORAL;pg.textAlign='center';pg.font='500 20px sans-serif';pg.fillText('explicit diverged',padL+w*0.5,padT+22);}
+  }
+
+  const bc=document.getElementById('break'),bg=bc.getContext('2d');
+  function drawBreak(){
+    const W=bc.width,H=bc.height; bg.clearRect(0,0,W,H);
+    const padL=66,padR=14,padTop=12,padBot=40,gap=14;
+    const w=W-padL-padR, ph=(H-padTop-padBot-2*gap)/3;
+    const panels=[['v/v₀ [-]',BLUE,0.80,1.40,1],['T/T₀ [-]',TEAL_D,0.95,1.35,2],['y_CO₂ [-]',RED,0.0,yMaxDisp,3]];
+    bg.font='19px sans-serif';
+    const tmax=TAU_MAX;
+    panels.forEach((P,pi)=>{
+      const y0=padTop+pi*(ph+gap), lo=P[2], hi=P[3];
+      const Xt=tt=>padL+(tt/tmax)*w, Yv=v=>y0+ph-ph*Math.max(0,Math.min(1,(v-lo)/(hi-lo)));
+      bg.strokeStyle=GRID;bg.lineWidth=1;bg.fillStyle=C_TXT;bg.textAlign='right';
+      for(let g=0;g<=2;g++){const yy=y0+ph*g/2;bg.beginPath();bg.moveTo(padL,yy);bg.lineTo(padL+w,yy);bg.stroke();
+        bg.fillText((hi-(hi-lo)*g/2).toFixed(2),padL-6,yy+6);}
+      bg.strokeStyle=C_TXT;bg.globalAlpha=0.4;bg.lineWidth=1.1;
+      bg.beginPath();bg.moveTo(padL,y0);bg.lineTo(padL,y0+ph);bg.lineTo(padL+w,y0+ph);bg.stroke();bg.globalAlpha=1;
+      bg.save();bg.translate(20,y0+ph/2);bg.rotate(-Math.PI/2);bg.textAlign='center';bg.fillStyle=C_TXT;bg.fillText(P[0],0,0);bg.restore();
+      // curve (skip first 2 transient points)
+      bg.strokeStyle=P[1];bg.lineWidth=2.4;bg.lineJoin='round';bg.beginPath();let started=false;
+      for(let k=2;k<hist.length;k++){const xx=Xt(hist[k][0]),yy=Yv(hist[k][P[4]]);started?bg.lineTo(xx,yy):(bg.moveTo(xx,yy),started=true);}
+      if(started)bg.stroke();
+      if(pi===2){bg.fillStyle=C_TXT;bg.textAlign='center';
+        for(let g=0;g<=5;g++){const xx=padL+w*g/5;bg.fillText(g.toString(),xx,y0+ph+24);}
+        bg.fillText('time  τ [-]',padL+w/2,H-6);}
+    });
+  }
+
+  const jc2=document.getElementById('jac'),jg=jc2.getContext('2d');
+  function drawJac(){
+    const S=jc2.width; jg.clearRect(0,0,S,S);
+    if(!lastJ)return;
+    const nb=Math.min(N,6), K=6*nb, cell=S/K;     // zoom to top-left nb cells
+    let mx=0; for(let i=0;i<K;i++)for(let j=0;j<K;j++)mx=Math.max(mx,Math.abs(lastJ[i][j]));
+    for(let i=0;i<K;i++)for(let j=0;j<K;j++){
+      const a=Math.abs(lastJ[i][j])/(mx||1); if(a<0.012)continue;
+      jg.fillStyle=BLUE_D;jg.globalAlpha=Math.min(1,0.14+a);
+      jg.fillRect(j*cell,i*cell,cell-0.6,cell-0.6);
+    }
+    jg.globalAlpha=1;
+    jg.strokeStyle=GRID;jg.lineWidth=1;
+    for(let b=0;b<=nb;b++){const p=b*6*cell;jg.beginPath();jg.moveTo(p,0);jg.lineTo(p,S);jg.moveTo(0,p);jg.lineTo(S,p);jg.stroke();}
+  }
+
+  const wc=document.getElementById('weno'),wg=wc.getContext('2d'),wtxt=document.getElementById('wenotxt');
+  function drawWeno(){
+    const W=wc.width,H=wc.height; wg.clearRect(0,0,W,H);
+    const off=+document.getElementById('wfield').value;
+    const j=Math.min(N-2,Math.max(1,+document.getElementById('cell').value-1));
+    const arr=gF(y,off), cm=arr[j-1],cc=arr[j],cp=arr[j+1], fc=face(cm,cc,cp);
+    let lo,hi,unit;
+    if(off===0){lo=0;hi=yMaxDisp;unit='y';}
+    else if(off===3){lo=0.95;hi=1.30;unit='T/T₀';}
+    else{lo=0.1;hi=1.2;unit='P/P_H';}
+    const base=H-44,maxh=H-72;
+    const sc=v=>maxh*Math.max(0,Math.min(1,(v-lo)/(hi-lo)));
+    const xs=[W*0.16,W*0.40,W*0.64],lbl=[unit+'(j−1)',unit+'(j)',unit+'(j+1)'],vals=[cm,cc,cp];
+    wg.font='18px sans-serif';wg.textAlign='center';
+    vals.forEach((v,k)=>{const bh=sc(v),x=xs[k];
+      wg.fillStyle=k===1?BLUE_D:BLUE;wg.globalAlpha=0.85;wg.fillRect(x-26,base-bh,52,bh);wg.globalAlpha=1;
+      wg.fillStyle=C_TXT;wg.fillText(lbl[k],x,base+22);
+      wg.fillStyle=C_TXP;wg.fillText(v.toFixed(3),x,base-bh-6);});
+    const fx=W*0.86,fh=sc(fc.val);
+    wg.fillStyle=CORAL;wg.fillRect(fx-26,base-fh,52,fh);
+    wg.fillStyle=C_TXT;wg.fillText('face j+½',fx,base+22);
+    wg.fillStyle=CORAL;wg.fillText(fc.val.toFixed(3),fx,base-fh-6);
+    wtxt.innerHTML='smooth-stencil weight w₀ = <b style="color:'+BLUE_D+'">'+fc.w0.toFixed(2)+
+      '</b>, steep-stencil weight w₁ = <b style="color:'+CORAL+'">'+fc.w1.toFixed(2)+
+      '</b>. WENO is applied to the convected fields; the simulator uses it for the gas balance. Near a sharp front the steep-side weight collapses, avoiding oscillations.';
+  }
+
+  function renderAll(){
+    drawProfile();drawBreak();drawJac();drawWeno();
+    document.getElementById('tval').textContent=t.toFixed(2);
+    const uu=getU();let fz=1;for(let i=0;i<N;i++){if(uu[i]<feed/2){fz=i/N;break;}}
+    document.getElementById('frontval').textContent=fz.toFixed(2);
+    const fmt=v=>v===null?'–':(v===Infinity?'diverged':(v*100).toFixed(2)+'%');
+    document.getElementById('l1tb').textContent=fmt(l1(getU()));
+    document.getElementById('l1bdf').textContent=fmt(l1(getUbdf()));
+    const le=document.getElementById('l1exp');le.textContent=fmt(expDiverged?Infinity:l1(getUexp()));le.style.color=expDiverged?CORAL:'';
+    const si=stiffInfo(+dtEl.value);
+    document.getElementById('stiffinfo').innerHTML=
+      'Fastest mode |λ|<sub>max</sub> ≈ <b style="color:'+C_TXP+'">'+si.lam.toFixed(0)+
+      '</b> · explicit limit Δt &lt; 2/|λ| ≈ <b style="color:'+C_TXP+'">'+si.dtExp.toFixed(4)+
+      '</b> · your Δt = <b style="color:'+C_TXP+'">'+(+dtEl.value).toFixed(2)+'</b> → '+
+      (si.ratio>1?'<b style="color:'+CORAL+'">'+si.ratio.toFixed(0)+'× past it</b> (implicit stays stable; explicit blows up)':'<b style="color:'+TEAL+'">within it</b>')+
+      ' &nbsp;·&nbsp; <span style="color:'+BLUE_D+'">ode23tb '+(nit||0)+' its</span>, <span style="color:'+PURPLE_D+'">ode15s '+(nitB||0)+' its</span>'+
+      ', <span style="color:'+(expDiverged?CORAL:TEAL)+'">explicit '+(expDiverged?'diverged':'stable')+'</span>';
+  }
+
+  // ---------- controls ----------
+  const cell=document.getElementById('cell'),dtEl=document.getElementById('dt'),stiffEl=document.getElementById('stiff'),ncEl=document.getElementById('ncell');
+  function resync(){yExp=y.slice();yB=y.slice();yRef=y.slice();yBprev=null;expDiverged=false;}
+  cell.oninput=()=>{document.getElementById('cellout').textContent=cell.value;renderAll();};
+  dtEl.oninput=()=>{document.getElementById('dtout').textContent=(+dtEl.value).toFixed(2);resync();renderAll();};
+  stiffEl.oninput=()=>{alpha=+stiffEl.value;document.getElementById('stiffout').textContent=alpha;resync();lastJ=jac(y,+dtEl.value);renderAll();};
+  ncEl.oninput=()=>{N=+ncEl.value;document.getElementById('ncellout').textContent=N;
+    cell.max=N-2; if(+cell.value>N-2){cell.value=Math.max(2,Math.floor(N/3));document.getElementById('cellout').textContent=cell.value;}
+    initAll();setStage(-1);renderAll();};
+  document.getElementById('wfield').onchange=()=>renderAll();
+  document.getElementById('reset').onclick=()=>{initAll();setStage(-1);renderAll();};
+  let playing=false,raf=null;
+  document.getElementById('step').onclick=()=>{if(!playing){bothSteps(+dtEl.value);renderAll();}};
+  const playBtn=document.getElementById('play');
+  playBtn.onclick=()=>{playing=!playing;playBtn.querySelector('span').textContent=playing?'Pause':'Play';
+    playBtn.querySelector('i').className=playing?'ti ti-player-pause':'ti ti-player-play';if(playing)loop();};
+  function loop(){
+    if(!playing)return;
+    bothSteps(+dtEl.value); renderAll();
+    if(t>=TAU_MAX){playing=false;playBtn.querySelector('span').textContent='Play';playBtn.querySelector('i').className='ti ti-player-play';return;}
+    raf=requestAnimationFrame(loop);
+  }
+  function setStage(i){stage=i;}
+  initAll(); renderAll();
+})();
+</script>
+
+<script>
+window.addEventListener('load',function(){
+  if(window.renderMathInElement){
+    renderMathInElement(document.body,{delimiters:[
+      {left:'$$',right:'$$',display:true},{left:'\\[',right:'\\]',display:true},
+      {left:'\\(',right:'\\)',display:false},{left:'$',right:'$',display:false}
+    ],throwOnError:false});
+  }
+});
+</script>
+</body>
+</html>
