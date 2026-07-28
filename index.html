@@ -313,7 +313,7 @@
     <div class="stats" id="nwstats"></div>
     <div class="key">
       <span class="lbl">The point to take away</span>
-      Newton converges <b>quadratically</b> — the number of correct digits roughly doubles each iteration, which is why a handful of iterations is enough even for a badly nonlinear system. Bigger steps make the residual start higher and need more iterations. Notice the price, though: every one of those iterations needs a linear system solved, and that system needs a matrix. Which matrix is the subject of step 5.
+      At a reasonable step size Newton converges <b>quadratically</b> — the number of correct digits roughly doubles each iteration, which is why a handful of iterations is enough even for a badly nonlinear system. Push the step size to "very large" and watch it stop converging altogether: the correction keeps getting damped and the residual never falls. That is not a bug in this demo — it's the reason a real solver monitors convergence and <b>shrinks Δτ and retries</b> when Newton struggles, exactly as the full simulation in step 6 does. And notice the recurring price even when it works: every iteration needs a linear system solved, and that system needs a matrix. Which matrix is the subject of step 5.
     </div>
   </div>
   <div class="navbtns"><button data-goto="2"><i class="ti ti-arrow-left"></i> Back</button><button class="primary" data-goto="4">Next: the Jacobian <i class="ti ti-arrow-right"></i></button></div>
@@ -1087,13 +1087,13 @@ function buildTeaching(){
           dd=new Float64Array(M), sc2=new Float64Array(M);
     let cur=residual(sN,s,dtv,rv);
     hist.push({r:cur,du:0,lam:1});
-    for(let k=0;k<9;k++){
+    for(let k=0;k<14;k++){
       if(cur<1e-10)break;
       const bd=bandJac(sN,dtv);
       for(let i=0;i<M;i++)dd[i]=-rv[i];
       bandSolve(bd,dd);
       let lam=1,acc=false,nt=0;
-      for(let ls=0;ls<10;ls++){
+      for(let ls=0;ls<16;ls++){
         for(let i=0;i<M;i++){
           let v=sN[i]+lam*dd[i]; const f=i%NF;
           if(f===0)v=v<-0.2?-0.2:(v>1.2?1.2:v);
@@ -1166,13 +1166,21 @@ function drawNewton(){
   // stats
   const cu=hist[Math.min(nwShown,n)-1];
   const done=cu.r<1e-9;
+  const stalled=nwShown>=n && !done;
   document.getElementById('nwstats').innerHTML=
     '<span>iteration <b>'+(Math.min(nwShown,n)-1)+'</b> of '+(n-1)+'</span>'+
     '<span>‖r‖ <b>'+cu.r.toExponential(2)+'</b></span>'+
     '<span>largest correction <b>'+(cu.du?cu.du.toExponential(2):'—')+'</b></span>'+
     '<span>damping λ <b>'+(cu.lam!==undefined?cu.lam.toFixed(3):'—')+'</b></span>'+
-    (done?'<span style="color:var(--good);">solved — this is u<sup>n+1</sup></span>':'');
+    (done?'<span style="color:var(--good);">solved — this is u<sup>n+1</sup></span>':
+     stalled?'<span style="color:var(--hot);">stuck — see below</span>':'');
   document.getElementById('nwstep').disabled=nwShown>=n;
+  if(stalled){
+    document.getElementById('nwstats').innerHTML+=
+      '<div style="flex-basis:100%;font-size:12px;color:var(--tx2);margin-top:6px;line-height:1.55;">'+
+      'This step size is too large for Newton to recover from a cold start — the line search keeps damping the correction (λ='+cu.lam.toFixed(3)+
+      ') without ever driving the residual down. This is exactly the situation a real adaptive solver is built to avoid: it would have rejected this step and retried with a smaller Δτ, which is what the full simulation in step 6 does automatically.</div>';
+  }
 }
 
 // --- stage 5 drawing -------------------------------------------------------
