@@ -1544,8 +1544,9 @@ function buildTrace(dtv){
   push('resid','Measure how wrong the guess is',
     'r = u − u<sup>n</sup> − Δτ·F(u), and ‖r‖ = <b>'+cur.toExponential(3)+'</b>. If the guess were exact this would be zero.');
 
-  let it=0,stalled=false;
-  for(let k=0;k<12;k++){
+  let it=0,outcome='running';
+  const MAXIT=10;
+  for(let k=0;k<MAXIT;k++){
     const done=cur<1e-9;
     push('check', done?'Converged':'Not converged — iterate',
       '‖r‖ = <b>'+cur.toExponential(3)+'</b> against a tolerance of 1e−9. '+
@@ -1555,6 +1556,7 @@ function buildTrace(dtv){
       push('accept','Step accepted — τ advances',
         'Newton converged in <b>'+it+'</b> iteration'+(it===1?'':'s')+'. u<sup>n+1</sup> is stored, τ moves forward by Δτ, '+
         'and Δτ is adapted for next time: grown if this took ≤3 iterations, shrunk if it took ≥7.');
+      outcome='accepted';
       break;
     }
     bandJac(s,dtv); nJ++;
@@ -1588,7 +1590,7 @@ function buildTrace(dtv){
       push('reject','Step rejected — Δτ shrinks',
         'The whole step is abandoned. Δτ is cut and the same instant of physical time is attempted again from the '+
         '<b>untouched</b> u<sup>n</sup> — no state was corrupted, time simply refused to advance until the nonlinear solve could keep up.');
-      stalled=true;
+      outcome='stalled';
       break;
     }
     let mx=0; for(let i=0;i<M;i++)mx=Math.max(mx,Math.abs(tr[i]-s[i]));
@@ -1602,8 +1604,18 @@ function buildTrace(dtv){
     push('resid','Measure again',
       '‖r‖ = <b>'+cur.toExponential(3)+'</b>. Newton is quadratic, so when it is working this number roughly squares each time round.');
   }
+  if(outcome==='running'){
+    // Newton used its whole budget without reaching tolerance
+    push('check','Still not converged — and out of iterations',
+      '‖r‖ = <b>'+cur.toExponential(3)+'</b> after the full budget of '+MAXIT+
+      ' iterations. Newton is inching toward the answer but nowhere near tolerance.');
+    push('reject','Step rejected — iteration cap reached',
+      'A real solver does not keep grinding on a step that is not converging. It abandons this Δτ, cuts it, and restarts from the '+
+      '<b>untouched</b> u<sup>n</sup>. Every evaluation of F spent here is thrown away — which is precisely why Δτ is allowed to adapt instead of being fixed.');
+    outcome='maxit';
+  }
   setGrid(keepN);
-  return {ev:ev,dt:dtv,stalled:stalled,its:it};
+  return {ev:ev,dt:dtv,outcome:outcome,its:it,maxit:MAXIT,finalR:cur};
 }
 
 function layoutMap(W){
@@ -1765,10 +1777,15 @@ function updateMapPanel(){
   document.getElementById('ct-t').textContent=e.nF+probes;
   const done=pos===evs.length-1;
   const tot=document.getElementById('maptotal');
-  if(done&&tr.stalled){
+  if(done&&tr.outcome==='stalled'){
+    tot.innerHTML='<b style="color:var(--violet);">Newton got stuck at Δτ = '+tr.dt+' s.</b> '+
+      'The line search could not find any correction that reduced ‖r‖, so the step is thrown away — '+
+      (e.nF+probes)+' evaluations of F spent for nothing — and retried at a smaller Δτ.';
+  } else if(done&&tr.outcome==='maxit'){
     tot.innerHTML='<b style="color:var(--violet);">Newton never converged at Δτ = '+tr.dt+' s.</b> '+
-      'The whole step is thrown away — '+(e.nF+probes)+' evaluations of F spent for nothing — and retried at a smaller Δτ. '+
-      'A solver that could not detect this would march on with a wrong answer.';
+      'It used its full budget of '+tr.maxit+' iterations and was still at ‖r‖ = '+tr.finalR.toExponential(2)+
+      ' — improving, just too slowly. The step is rejected and retried at a smaller Δτ; '+
+      (e.nF+probes)+' evaluations of F were spent to learn that.';
   } else if(done){
     tot.innerHTML='<b style="color:var(--good);">One step, complete.</b> '+tr.its+' Newton iterations, '+
       (e.nF+probes)+' evaluations of F, '+e.nS+' banded solves — to move time forward by '+tr.dt+' s. '+
